@@ -122,6 +122,14 @@ const S = { img:null, id:null, ow:0, oh:0, corners:null,
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
 
+// plain dashed polyline through points [[x,y],...] (closed)
+function dashPoly(ctx, pts, col, w=3, dash=[11,8]){
+  ctx.strokeStyle=col; ctx.lineWidth=w; ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]);
+  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]);
+  ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+}
+
 // diamond-dashed line: place small rhombuses along the segment a->b
 function diamondLine(ctx, ax, ay, bx, by, col, h=6, step=17){
   const dx=bx-ax, dy=by-ay, len=Math.hypot(dx,dy);
@@ -240,7 +248,7 @@ function draw1(){
   c1.imageSmoothingQuality = "high";
   c1.drawImage(S.img, 0,0, cv1._dw, cv1._dh);
   const P = S.corners.map(p => ({x:p.x*s1, y:p.y*s1}));
-  for(let i=0;i<4;i++){ const a=P[i], b=P[(i+1)%4]; diamondLine(c1, a.x,a.y, b.x,b.y, OUTER_COL); }
+  dashPoly(c1, P.map(p=>[p.x,p.y]), OUTER_COL);
   P.forEach((p,i)=>{
     c1.fillStyle = i===drag1 ? "#ffffff" : "#7c9cff";
     c1.beginPath(); c1.arc(p.x,p.y,7,0,7); c1.fill();
@@ -264,8 +272,7 @@ function moveCorner(p){
   const y = clamp(drag1Start.cy + (p.y-drag1Start.my)/s1*SENS, 0, S.oh);
   S.corners[drag1] = {x,y}; draw1();
   showMag(S.img, x, y, p.cx, p.cy, toMag=>{
-    const P = S.corners.map(c=>toMag(c.x,c.y));
-    for(let i=0;i<4;i++){ const a=P[i], b=P[(i+1)%4]; diamondLine(mg, a[0],a[1], b[0],b[1], OUTER_COL); }
+    dashPoly(mg, S.corners.map(c=>toMag(c.x,c.y)), OUTER_COL);
   });
 }
 
