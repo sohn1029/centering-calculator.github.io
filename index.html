@@ -203,6 +203,52 @@ function getPerspectiveTransform(from, to){
   const h=b.map((v,i)=>v/(A[i][i]||1e-12));
   return [h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7],1];
 }
+// suggest the inner border (art boundary) from the warped pixels: sample the
+// border colour just inside the card edge, then per side scan inward to the
+// first sustained colour departure (median across the side). Mirrors the
+// backend's borders.measure so the suggestion works with no server.
+function _med(a){ a=a.slice().sort((x,y)=>x-y); return a[a.length>>1]; }
+function suggestInner(od, W, H, m, cardW, cardH){
+  const short=Math.min(cardW,cardH);
+  const at=(x,y)=>{ const o=((y|0)*W+(x|0))*4; return [od[o],od[o+1],od[o+2]]; };
+  const dist=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]);
+  const off0=Math.max(4, Math.round(0.015*short));   // skip the very edge
+  const refBand=Math.round(0.022*short);              // border-colour sample band
+  const THR=60, scan=Math.round(0.24*short);
+  // sample a point at inward offset d along a side at fraction t
+  function pt(side,t,d){
+    if(side==='l') return at(m+d, m+t*cardH);
+    if(side==='r') return at(m+cardW-d, m+t*cardH);
+    if(side==='t') return at(m+t*cardW, m+d);
+    return at(m+t*cardW, m+cardH-d);
+  }
+  function edge(side){
+    // per-side reference colour (median of the border just inside the edge)
+    const cr=[],cg=[],cb=[];
+    for(let t=0.15;t<0.85;t+=0.02) for(let d=off0; d<off0+refBand; d+=3){
+      const c=pt(side,t,d); cr.push(c[0]); cg.push(c[1]); cb.push(c[2]);
+    }
+    const ref=[_med(cr),_med(cg),_med(cb)];
+    const vals=[];
+    for(let t=0.12;t<0.88;t+=0.01){
+      for(let d=off0+refBand; d<scan; d++){
+        if(dist(pt(side,t,d),ref)>THR){
+          // require the departure to be sustained (not a speck of noise)
+          let ok=true;
+          for(let e=2;e<=6;e++) if(dist(pt(side,t,d+e),ref) < THR*0.6){ ok=false; break; }
+          if(ok){ vals.push(d); break; }
+        }
+      }
+    }
+    return vals.length>=10 ? _med(vals) : Math.round(0.07*short);
+  }
+  // a border has ~uniform width; snap any wildly-off side (holo/low-contrast)
+  // to the median so one bad edge can't produce a crazy rectangle.
+  const e={l:edge('l'), r:edge('r'), t:edge('t'), b:edge('b')};
+  const md=_med([e.l,e.r,e.t,e.b]);
+  for(const k of ['l','r','t','b']) if(e[k]>2.2*md || e[k]<0.45*md) e[k]=md;
+  return { left:m+e.l, top:m+e.t, right:m+cardW-e.r, bottom:m+cardH-e.b };
+}
 function warpClient(img, corners){
   const cardH=1500, cardW=Math.round(cardH*CARD_ASPECT);
   const m=Math.round(0.05*cardW), cw=cardW+2*m, ch=cardH+2*m;
@@ -230,10 +276,9 @@ function warpClient(img, corners){
     od[o+3]=255;
   }
   octx.putImageData(out,0,0);
-  const gx=0.07*cardW, gy=0.07*cardH;
   return { canvas:oc, w:cw, h:ch,
     outer:{left:m,top:m,right:m+cardW,bottom:m+cardH},
-    inner:{left:m+gx,top:m+gy,right:m+cardW-gx,bottom:m+cardH-gy} };
+    inner:suggestInner(od, cw, ch, m, cardW, cardH) };
 }
 
 // ============================ STEP 1 =======================================
