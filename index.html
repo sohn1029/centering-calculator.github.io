@@ -136,19 +136,6 @@ function dashPoly(ctx, pts, col, w=3, dash=[11,8]){
   ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
 }
 
-// diamond-dashed line: place small rhombuses along the segment a->b
-function diamondLine(ctx, ax, ay, bx, by, col, h=6, step=17){
-  const dx=bx-ax, dy=by-ay, len=Math.hypot(dx,dy);
-  if(len<0.5) return;
-  const ux=dx/len, uy=dy/len;
-  ctx.fillStyle=col;
-  for(let d=0; d<=len; d+=step){
-    const px=ax+ux*d, py=ay+uy*d;
-    ctx.beginPath();
-    ctx.moveTo(px, py-h); ctx.lineTo(px+h, py); ctx.lineTo(px, py+h); ctx.lineTo(px-h, py);
-    ctx.closePath(); ctx.fill();
-  }
-}
 
 function fit(canvas, iw, ih){
   const wrap = canvas.parentElement;
@@ -489,11 +476,11 @@ function draw2(){
 }
 function drawRect(R, col){
   const l=R.left*s2,t=R.top*s2,r=R.right*s2,b=R.bottom*s2;
-  diamondLine(c2,l,t,r,t,col); diamondLine(c2,r,t,r,b,col);
-  diamondLine(c2,r,b,l,b,col); diamondLine(c2,l,b,l,t,col);
+  c2.strokeStyle=col; c2.lineWidth=2; c2.setLineDash([]);
+  c2.strokeRect(l,t,r-l,b-t);
   c2.fillStyle=col;
   const H=[[ (l+r)/2, t],[ (l+r)/2, b],[ l,(t+b)/2],[ r,(t+b)/2]];
-  H.forEach(([x,y])=>{ c2.beginPath(); c2.rect(x-5,y-5,10,10); c2.fill(); });
+  H.forEach(([x,y])=>{ c2.beginPath(); c2.rect(x-4,y-4,8,8); c2.fill(); });
 }
 function pickEdge(p){
   const near=(v,w)=>Math.abs(v-w)<12;
@@ -531,12 +518,24 @@ function moveEdge(p){
   const sx = vert ? R[KEY] : wx;     // edge x for l/r, mouse x for t/b
   const sy = vert ? wy : R[KEY];     // mouse y for l/r, edge y for t/b
   showMag(S.warp, sx, sy, p.cx, p.cy, s2, toMag=>{
+    // thin context rectangles (don't obscure the border)
     for(const [name,col] of [["outer",OUTER_COL],["inner",INNER_COL]]){
       const Q = S[name]; const [l,t] = toMag(Q.left,Q.top), [r,b] = toMag(Q.right,Q.bottom);
-      diamondLine(mg,l,t,r,t,col); diamondLine(mg,r,t,r,b,col);
-      diamondLine(mg,r,b,l,b,col); diamondLine(mg,l,b,l,t,col);
+      mg.strokeStyle=col; mg.lineWidth=1; mg.setLineDash([]); mg.strokeRect(l,t,r-l,b-t);
     }
+    // >---< markers pointing at the dragged edge so the real border stays visible
+    edgeMarker(vert, drag2.rect==='inner'?INNER_COL:OUTER_COL);
   });
+}
+// draw two arrowheads pointing at the centred edge line (> ... < / v ... ^)
+function edgeMarker(vert, col){
+  const c=MS/2, gap=26, len=18, w=11;
+  mg.fillStyle=col;
+  const arrow=(tx,ty,dx,dy)=>{ const px=-dy, py=dx; mg.beginPath();
+    mg.moveTo(tx,ty); mg.lineTo(tx-dx*len+px*w, ty-dy*len+py*w);
+    mg.lineTo(tx-dx*len-px*w, ty-dy*len-py*w); mg.closePath(); mg.fill(); };
+  if(vert){ arrow(c-gap+len,c, 1,0); arrow(c+gap-len,c, -1,0); }   // > line <
+  else    { arrow(c,c-gap+len, 0,1); arrow(c,c+gap-len, 0,-1); }   // v line ^
 }
 $("btnReset").addEventListener("click", async ()=>{ $("btnWarp").click(); });
 
