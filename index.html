@@ -527,15 +527,16 @@ function moveEdge(p){
     edgeMarker(vert, drag2.rect==='inner'?INNER_COL:OUTER_COL);
   });
 }
-// draw two arrowheads pointing at the centred edge line (> ... < / v ... ^)
+// two arrowheads that converge on the edge point, pointing ALONG the edge line
+// (a vertical edge gets up/down arrows; a horizontal edge gets left/right arrows)
 function edgeMarker(vert, col){
   const c=MS/2, gap=26, len=18, w=11;
   mg.fillStyle=col;
   const arrow=(tx,ty,dx,dy)=>{ const px=-dy, py=dx; mg.beginPath();
     mg.moveTo(tx,ty); mg.lineTo(tx-dx*len+px*w, ty-dy*len+py*w);
     mg.lineTo(tx-dx*len-px*w, ty-dy*len-py*w); mg.closePath(); mg.fill(); };
-  if(vert){ arrow(c-gap+len,c, 1,0); arrow(c+gap-len,c, -1,0); }   // > line <
-  else    { arrow(c,c-gap+len, 0,1); arrow(c,c+gap-len, 0,-1); }   // v line ^
+  if(vert){ arrow(c,c-gap+len, 0,1); arrow(c,c+gap-len, 0,-1); }   // along vertical edge
+  else    { arrow(c-gap+len,c, 1,0); arrow(c+gap-len,c, -1,0); }   // along horizontal edge
 }
 $("btnReset").addEventListener("click", async ()=>{ $("btnWarp").click(); });
 
