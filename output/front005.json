@@ -1,0 +1,46 @@
+{
+  "name": "front005",
+  "image_path": "data/front005.jpg",
+  "left_right": {
+    "left_pct": 46.34,
+    "right_pct": 53.66
+  },
+  "top_bottom": {
+    "top_pct": 84.99,
+    "bottom_pct": 15.01
+  },
+  "border_widths_px": {
+    "left": 52.29,
+    "right": 60.54,
+    "top": 66.15,
+    "bottom": 11.69
+  },
+  "worst_pct": 84.99,
+  "grade": 4.0,
+  "grade_label": "Good",
+  "confidence": "medium",
+  "spread_px": {
+    "left": 0.78,
+    "right": 0.97,
+    "top": 2.29,
+    "bottom": 6.39
+  },
+  "corners": [
+    [
+      226.89999389648438,
+      422.5
+    ],
+    [
+      2658.89990234375,
+      431.5
+    ],
+    [
+      2656.699951171875,
+      3164.5
+    ],
+    [
+      233.10000610351562,
+      3516.10009765625
+    ]
+  ]
+}

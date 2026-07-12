@@ -1,0 +1,46 @@
+{
+  "name": "front001",
+  "image_path": "data/front001.jpg",
+  "left_right": {
+    "left_pct": 51.72,
+    "right_pct": 48.28
+  },
+  "top_bottom": {
+    "top_pct": 50.84,
+    "bottom_pct": 49.16
+  },
+  "border_widths_px": {
+    "left": 57.44,
+    "right": 53.62,
+    "top": 55.23,
+    "bottom": 53.4
+  },
+  "worst_pct": 51.72,
+  "grade": 10.0,
+  "grade_label": "Gem Mint",
+  "confidence": "high",
+  "spread_px": {
+    "left": 0.53,
+    "right": 0.59,
+    "top": 0.36,
+    "bottom": 1.14
+  },
+  "corners": [
+    [
+      248.39999389648438,
+      345.20001220703125
+    ],
+    [
+      2752.89990234375,
+      383.3999938964844
+    ],
+    [
+      2528.39990234375,
+      3512.60009765625
+    ],
+    [
+      375.1000061035156,
+      3520.300048828125
+    ]
+  ]
+}

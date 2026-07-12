@@ -1,0 +1,46 @@
+{
+  "name": "back002",
+  "image_path": "data/back002.jpg",
+  "left_right": {
+    "left_pct": 46.81,
+    "right_pct": 53.19
+  },
+  "top_bottom": {
+    "top_pct": 49.0,
+    "bottom_pct": 51.0
+  },
+  "border_widths_px": {
+    "left": 66.67,
+    "right": 75.74,
+    "top": 69.77,
+    "bottom": 72.64
+  },
+  "worst_pct": 53.19,
+  "grade": 10.0,
+  "grade_label": "Gem Mint",
+  "confidence": "high",
+  "spread_px": {
+    "left": 2.33,
+    "right": 2.52,
+    "top": 0.96,
+    "bottom": 1.22
+  },
+  "corners": [
+    [
+      360.79998779296875,
+      327.1000061035156
+    ],
+    [
+      2625.699951171875,
+      434.1000061035156
+    ],
+    [
+      2687.5,
+      3511.300048828125
+    ],
+    [
+      465.6000061035156,
+      3766.0
+    ]
+  ]
+}

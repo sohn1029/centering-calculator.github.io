@@ -1,0 +1,46 @@
+{
+  "name": "back004",
+  "image_path": "data/back004.jpg",
+  "left_right": {
+    "left_pct": 47.16,
+    "right_pct": 52.84
+  },
+  "top_bottom": {
+    "top_pct": 43.3,
+    "bottom_pct": 56.7
+  },
+  "border_widths_px": {
+    "left": 66.52,
+    "right": 74.53,
+    "top": 57.71,
+    "bottom": 75.57
+  },
+  "worst_pct": 56.7,
+  "grade": 9.0,
+  "grade_label": "Mint",
+  "confidence": "low",
+  "spread_px": {
+    "left": 36.96,
+    "right": 17.39,
+    "top": 11.65,
+    "bottom": 2.22
+  },
+  "corners": [
+    [
+      396.1000061035156,
+      281.6000061035156
+    ],
+    [
+      2671.5,
+      269.29998779296875
+    ],
+    [
+      2699.699951171875,
+      3597.89990234375
+    ],
+    [
+      416.0,
+      3604.10009765625
+    ]
+  ]
+}
