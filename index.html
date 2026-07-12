@@ -164,12 +164,17 @@ function fit(canvas, iw, ih){
 
 // ---- magnifier -------------------------------------------------------------
 const mag = $("mag"), mg = mag.getContext("2d");
-const MS = 540, MR = 340;         // box (px) & sample radius (source px) -> ~0.79x, bigger UI
+const MS = 540;                   // magnifier box size (px)
+const MAG_ZOOM = 6;               // magnifier shows ~6x the on-canvas zoom (resolution-independent)
 const SENS = 1/1.5;               // precision drag: handle moves at 1/1.5x the cursor speed
 const OUTER_COL = "#00e676", INNER_COL = "#e60028";   // bright-green outer, deep-red inner
 // overlay(toMag): draw the current UI guide lines inside the magnifier so the
 // user can align them to the real card edges visible around the cursor.
-function showMag(srcImg, sx, sy, clientX, clientY, overlay){
+// dispScale = CSS px per source px on the canvas; MR adapts so the magnifier is
+// always MAG_ZOOM times the canvas zoom (so low-res images still look zoomed in,
+// not smaller than the canvas).
+function showMag(srcImg, sx, sy, clientX, clientY, dispScale, overlay){
+  const MR = Math.max(10, Math.min(700, MS/(2*MAG_ZOOM*(dispScale||1))));  // source-px radius
   mag.style.display = "block";
   let mx = clientX + 26, my = clientY - MS - 20;
   if (my < 8) my = clientY + 26;
@@ -255,6 +260,39 @@ function suggestInner(od, W, H, m, cardW, cardH){
   for(const k of ['l','r','t','b']) if(e[k]>2.2*md || e[k]<0.45*md) e[k]=md;
   return { left:m+e.l, top:m+e.t, right:m+cardW-e.r, bottom:m+cardH-e.b };
 }
+// rough client-side card detection for Step 1 (no backend). The card is sharp
+// and detailed (text/art) while the background/hand is blurry and smooth, so the
+// bounding box of high-gradient ("detail") pixels approximates the card. Uses a
+// row/column detail profile with a threshold for robustness. Returns TL,TR,BR,BL
+// or null (then the caller keeps the default box). A starting guess the user
+// fine-tunes.
+function autoCorners(img){
+  const W=img.naturalWidth, H=img.naturalHeight;
+  const dw=Math.min(320, W), dh=Math.max(1, Math.round(dw*H/W));
+  const c=document.createElement("canvas"); c.width=dw; c.height=dh;
+  const g=c.getContext("2d"); g.drawImage(img,0,0,dw,dh);
+  let d; try{ d=g.getImageData(0,0,dw,dh).data; }catch(e){ return null; }
+  const gray=(x,y)=>{ const o=(y*dw+x)*4; return 0.299*d[o]+0.587*d[o+1]+0.114*d[o+2]; };
+  // detail (gradient) map; accumulate per-row and per-column counts
+  const rows=new Float32Array(dh), cols=new Float32Array(dw);
+  for(let y=1;y<dh-1;y++) for(let x=1;x<dw-1;x++){
+    const gx=gray(x+1,y)-gray(x-1,y), gy=gray(x,y+1)-gray(x,y-1);
+    if(Math.hypot(gx,gy) > 26){ rows[y]++; cols[x]++; }
+  }
+  // a row/col is "card" if its detail count exceeds a fraction of the peak
+  function span(arr, n){
+    let peak=0; for(let i=0;i<n;i++) peak=Math.max(peak,arr[i]);
+    if(peak<3) return null;
+    const th=peak*0.18; let a=-1,b=-1;
+    for(let i=0;i<n;i++){ if(arr[i]>=th){ if(a<0)a=i; b=i; } }
+    return (b-a) > n*0.3 ? [a,b] : null;
+  }
+  const xspan=span(cols,dw), yspan=span(rows,dh);
+  if(!xspan||!yspan) return null;
+  const sx=W/dw, sy=H/dh;
+  const x0=xspan[0]*sx, x1=xspan[1]*sx, y0=yspan[0]*sy, y1=yspan[1]*sy;
+  return [ {x:x0,y:y0},{x:x1,y:y0},{x:x1,y:y1},{x:x0,y:y1} ];
+}
 function warpClient(img, corners){
   const cardH=1500, cardW=Math.round(cardH*CARD_ASPECT);
   const m=Math.round(0.05*cardW), cw=cardW+2*m, ch=cardH+2*m;
@@ -322,7 +360,7 @@ function moveCorner(p){
   const x = clamp(drag1Start.cx + (p.x-drag1Start.mx)/s1*SENS, 0, S.ow);
   const y = clamp(drag1Start.cy + (p.y-drag1Start.my)/s1*SENS, 0, S.oh);
   S.corners[drag1] = {x,y}; draw1();
-  showMag(S.img, x, y, p.cx, p.cy, toMag=>{
+  showMag(S.img, x, y, p.cx, p.cy, s1, toMag=>{
     dashPoly(mg, S.corners.map(c=>toMag(c.x,c.y)), OUTER_COL);
   });
 }
@@ -349,7 +387,11 @@ async function loadFile(f){
       }catch(err){ S.id = null; }
     }
     if(!S.id){
-      $("sub1").textContent = "Drag the four handles onto the card's corners. A magnifier appears while dragging.";
+      const ac = autoCorners(img);
+      if(ac) S.corners = ac;
+      $("sub1").textContent = (ac ? "Card auto-detected — drag the handles to fine-tune."
+                                  : "Drag the four handles onto the card's corners.")
+                              + " A magnifier appears while dragging.";
     }
     draw1(); $("btnWarp").disabled = false;
   };
@@ -440,7 +482,7 @@ function moveEdge(p){
   const wx=clamp(p.x/s2,0,S.wcw), wy=clamp(p.y/s2,0,S.wch);
   const sx = vert ? R[KEY] : wx;     // edge x for l/r, mouse x for t/b
   const sy = vert ? wy : R[KEY];     // mouse y for l/r, edge y for t/b
-  showMag(S.warp, sx, sy, p.cx, p.cy, toMag=>{
+  showMag(S.warp, sx, sy, p.cx, p.cy, s2, toMag=>{
     for(const [name,col] of [["outer",OUTER_COL],["inner",INNER_COL]]){
       const Q = S[name]; const [l,t] = toMag(Q.left,Q.top), [r,b] = toMag(Q.right,Q.bottom);
       diamondLine(mg,l,t,r,t,col); diamondLine(mg,r,t,r,b,col);
