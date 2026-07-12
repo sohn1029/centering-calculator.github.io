@@ -1,0 +1,11 @@
+# personal card photos (do not publish)
+data/
+# generated outputs
+output/
+# python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+# os / editor
+.DS_Store
+Thumbs.db

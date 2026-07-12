@@ -115,7 +115,6 @@
 <canvas id="mag" width="540" height="540"></canvas>
 
 <script>
-const API = "";
 const S = { img:null, id:null, ow:0, oh:0, corners:null,
             warp:null, wcw:0, wch:0, outer:null, inner:null };
 
@@ -174,6 +173,61 @@ function showMag(srcImg, sx, sy, clientX, clientY, overlay){
 }
 const hideMag = () => mag.style.display = "none";
 
+// ---- client-side perspective warp (used when no backend is available, e.g.
+//      GitHub Pages). Geometry is exact; only the displayed pixels are sampled. --
+const CARD_ASPECT = 63/88;
+function getPerspectiveTransform(from, to){
+  // returns flat 3x3 H (h0..h8, h8=1) mapping 'from' points -> 'to' points
+  const A=[], b=[];
+  for(let i=0;i<4;i++){
+    const [fx,fy]=from[i], [tx,ty]=to[i];
+    A.push([fx,fy,1,0,0,0,-fx*tx,-fy*tx]); b.push(tx);
+    A.push([0,0,0,fx,fy,1,-fx*ty,-fy*ty]); b.push(ty);
+  }
+  // Gaussian elimination on the 8x8 system
+  for(let c=0;c<8;c++){
+    let piv=c; for(let r=c+1;r<8;r++) if(Math.abs(A[r][c])>Math.abs(A[piv][c])) piv=r;
+    [A[c],A[piv]]=[A[piv],A[c]]; [b[c],b[piv]]=[b[piv],b[c]];
+    const d=A[c][c]||1e-12;
+    for(let r=0;r<8;r++){ if(r===c) continue; const k=A[r][c]/d;
+      for(let j=c;j<8;j++) A[r][j]-=k*A[c][j]; b[r]-=k*b[c]; }
+  }
+  const h=b.map((v,i)=>v/(A[i][i]||1e-12));
+  return [h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7],1];
+}
+function warpClient(img, corners){
+  const cardH=1500, cardW=Math.round(cardH*CARD_ASPECT);
+  const m=Math.round(0.05*cardW), cw=cardW+2*m, ch=cardH+2*m;
+  const dst=[[m,m],[m+cardW-1,m],[m+cardW-1,m+cardH-1],[m,m+cardH-1]];
+  const src=corners.map(c=>[c.x,c.y]);
+  const H=getPerspectiveTransform(dst, src);           // output px -> source px
+  const long=Math.max(img.naturalWidth,img.naturalHeight), f=Math.min(1,2200/long);
+  const sw=Math.round(img.naturalWidth*f), sh=Math.round(img.naturalHeight*f);
+  const sc=document.createElement("canvas"); sc.width=sw; sc.height=sh;
+  const sctx=sc.getContext("2d"); sctx.drawImage(img,0,0,sw,sh);
+  const sd=sctx.getImageData(0,0,sw,sh).data;
+  const oc=document.createElement("canvas"); oc.width=cw; oc.height=ch;
+  const octx=oc.getContext("2d"); const out=octx.createImageData(cw,ch), od=out.data;
+  for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){
+    const wz=H[6]*x+H[7]*y+H[8];
+    const sx=(H[0]*x+H[1]*y+H[2])/wz*f, sy=(H[3]*x+H[4]*y+H[5])/wz*f;
+    const o=(y*cw+x)*4;
+    if(sx<0||sy<0||sx>=sw-1||sy>=sh-1){ od[o+3]=0; continue; }
+    const x0=sx|0, y0=sy|0, dx=sx-x0, dy=sy-y0;
+    const p00=(y0*sw+x0)*4, p10=p00+4, p01=p00+sw*4, p11=p01+4;
+    for(let k=0;k<3;k++){
+      const top=sd[p00+k]*(1-dx)+sd[p10+k]*dx, bot=sd[p01+k]*(1-dx)+sd[p11+k]*dx;
+      od[o+k]=top*(1-dy)+bot*dy;
+    }
+    od[o+3]=255;
+  }
+  octx.putImageData(out,0,0);
+  const gx=0.07*cardW, gy=0.07*cardH;
+  return { canvas:oc, w:cw, h:ch,
+    outer:{left:m,top:m,right:m+cardW,bottom:m+cardH},
+    inner:{left:m+gx,top:m+gy,right:m+cardW-gx,bottom:m+cardH-gy} };
+}
+
 // ============================ STEP 1 =======================================
 const cv1 = $("cv1"), c1 = cv1.getContext("2d");
 let s1 = 1, drag1 = -1, drag1Start = null;
@@ -227,30 +281,47 @@ async function loadFile(f){
     draw1();
     try{
       const fd = new FormData(); fd.append("file", f);
-      const r = await fetch(API+"/api/detect",{method:"POST",body:fd}); const j = await r.json();
+      const r = await fetch("api/detect",{method:"POST",body:fd});
+      if(!r.ok) throw 0;
+      const j = await r.json();
       S.id = j.id; S.corners = j.corners.map(p=>({x:p[0],y:p[1]}));
       $("sub1").textContent = "Auto-detected — drag the handles to align precisely with the four card corners.";
-    }catch(err){ $("sub1").textContent = "Auto-detect failed — set the four corners manually."; }
+    }catch(err){
+      S.id = null;
+      $("sub1").textContent = "Drag the four handles onto the card's corners. A magnifier appears while dragging.";
+    }
     draw1(); $("btnWarp").disabled = false;
   };
   img.src = URL.createObjectURL(f);
 }
 
 $("btnWarp").addEventListener("click", async ()=>{
-  if(!S.id){ alert("Server session lost. Please re-upload the image."); return; }
+  if(!S.img) return;
   $("sub2").textContent = "Rectifying…";
-  const body = { id:S.id, corners:S.corners.map(c=>[c.x,c.y]) };
-  const r = await fetch(API+"/api/warp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  const j = await r.json();
-  const wi = new Image();
-  wi.onload = ()=>{
-    S.warp=wi; S.wcw=j.w; S.wch=j.h; S.outer={...j.outer}; S.inner={...j.inner};
-    s2 = fit(cv2, S.wcw, S.wch); draw2(); recompute();
-    $("btnReset").disabled=false;
-    $("sub2").textContent = "Drag the green (outer) and red (inner) lines to fit. A magnifier appears while dragging.";
-  };
-  wi.src = j.image;
+  let data = null;
+  if(S.id){                                    // try the optional backend warp
+    try{
+      const r = await fetch("api/warp",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({id:S.id, corners:S.corners.map(c=>[c.x,c.y])})});
+      if(r.ok) data = await r.json();
+    }catch(e){}
+  }
+  if(data){
+    const wi = new Image();
+    wi.onload = ()=> setWarp(wi, data.w, data.h, data.outer, data.inner);
+    wi.src = data.image;
+  }else{                                        // client-side warp (no backend needed)
+    await new Promise(r=>setTimeout(r,10));     // let "Rectifying…" paint first
+    const res = warpClient(S.img, S.corners);
+    setWarp(res.canvas, res.w, res.h, res.outer, res.inner);
+  }
 });
+function setWarp(drawable, w, h, outer, inner){
+  S.warp=drawable; S.wcw=w; S.wch=h; S.outer={...outer}; S.inner={...inner};
+  s2 = fit(cv2, w, h); draw2(); recompute();
+  $("btnReset").disabled=false;
+  $("sub2").textContent = "Drag the green (outer) and red (inner) lines to fit. A magnifier appears while dragging.";
+}
 
 // ============================ STEP 2 =======================================
 const cv2 = $("cv2"), c2 = cv2.getContext("2d");

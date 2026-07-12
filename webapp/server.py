@@ -21,7 +21,6 @@ import cv2
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import os
@@ -32,7 +31,9 @@ from src import detect, borders  # noqa: E402
 
 app = FastAPI(title="Card Centering")
 
-_STATIC = os.path.join(os.path.dirname(__file__), "static")
+# the single-page app lives at the repo root (so GitHub Pages can serve it too)
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_INDEX = os.path.join(_ROOT, "index.html")
 # in-memory image cache: id -> BGR ndarray (fine for local single-user use)
 _IMAGES: dict[str, np.ndarray] = {}
 
@@ -108,7 +109,4 @@ async def warp(req: WarpReq):
 
 @app.get("/")
 async def index():
-    return FileResponse(os.path.join(_STATIC, "index.html"))
-
-
-app.mount("/static", StaticFiles(directory=_STATIC), name="static")
+    return FileResponse(_INDEX)
