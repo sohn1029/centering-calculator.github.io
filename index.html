@@ -119,6 +119,10 @@
 <script>
 const S = { img:null, id:null, ow:0, oh:0, corners:null,
             warp:null, wcw:0, wch:0, outer:null, inner:null };
+// The optional Python backend (auto corner detection) only runs on localhost.
+// On static hosting (e.g. GitHub Pages) skip it and use the built-in browser
+// path — otherwise POSTs to /api/* return a harmless-but-confusing 405.
+const USE_BACKEND = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/.test(location.hostname);
 
 // ---- helpers ---------------------------------------------------------------
 const $ = id => document.getElementById(id);
@@ -333,15 +337,18 @@ async function loadFile(f){
     // default box while waiting
     S.corners = [{x:S.ow*.12,y:S.oh*.12},{x:S.ow*.88,y:S.oh*.12},{x:S.ow*.88,y:S.oh*.88},{x:S.ow*.12,y:S.oh*.88}];
     draw1();
-    try{
-      const fd = new FormData(); fd.append("file", f);
-      const r = await fetch("api/detect",{method:"POST",body:fd});
-      if(!r.ok) throw 0;
-      const j = await r.json();
-      S.id = j.id; S.corners = j.corners.map(p=>({x:p[0],y:p[1]}));
-      $("sub1").textContent = "Auto-detected — drag the handles to align precisely with the four card corners.";
-    }catch(err){
-      S.id = null;
+    S.id = null;
+    if(USE_BACKEND){
+      try{
+        const fd = new FormData(); fd.append("file", f);
+        const r = await fetch("api/detect",{method:"POST",body:fd});
+        if(!r.ok) throw 0;
+        const j = await r.json();
+        S.id = j.id; S.corners = j.corners.map(p=>({x:p[0],y:p[1]}));
+        $("sub1").textContent = "Auto-detected — drag the handles to align precisely with the four card corners.";
+      }catch(err){ S.id = null; }
+    }
+    if(!S.id){
       $("sub1").textContent = "Drag the four handles onto the card's corners. A magnifier appears while dragging.";
     }
     draw1(); $("btnWarp").disabled = false;
@@ -353,7 +360,7 @@ $("btnWarp").addEventListener("click", async ()=>{
   if(!S.img) return;
   $("sub2").textContent = "Rectifying…";
   let data = null;
-  if(S.id){                                    // try the optional backend warp
+  if(USE_BACKEND && S.id){                      // try the optional backend warp
     try{
       const r = await fetch("api/warp",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({id:S.id, corners:S.corners.map(c=>[c.x,c.y])})});
