@@ -1,0 +1,15 @@
+name: card
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - opencv-python
+      - numpy
+      - scipy
+      - matplotlib
+      - Pillow
+      - fastapi
+      - uvicorn[standard]
+      - python-multipart

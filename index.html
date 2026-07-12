@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pokémon Card Centering</title>
+<style>
+  :root { --bg:#0f1115; --panel:#181b22; --line:#2a2f3a; --ink:#e7e9ee; --muted:#9aa3b2;
+          --blue:#0047d6; --red:#e60028; --green:#22c55e; --accent:#7c9cff; }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--ink); height:100vh; overflow:hidden;
+         display:flex; flex-direction:column;
+         font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  header { padding:10px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center;
+           gap:16px; flex:0 0 auto; }
+  header h1 { font-size:15px; margin:0; font-weight:650; white-space:nowrap; }
+  header .hint { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .grid { flex:1 1 auto; min-height:0; display:grid; grid-template-columns:1fr 1fr 1fr;
+          gap:12px; padding:12px; }
+  @media (max-width:900px){ body{ overflow:auto; } .grid{ grid-template-columns:1fr; } }
+  .col { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+         padding:12px 14px; display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
+  .col h2 { font-size:13px; margin:0 0 4px; display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+  .num { width:22px; height:22px; border-radius:50%; background:var(--accent); color:#0b1020;
+         display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:12px; }
+  .col .sub { color:var(--muted); font-size:12px; margin:0 0 8px; min-height:16px; flex:0 0 auto; }
+  .canvas-wrap { position:relative; background:#0b0d12; border:1px solid var(--line);
+                 border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center;
+                 min-height:0; flex:1 1 auto; }
+  canvas { max-width:100%; max-height:100%; touch-action:none; display:block; }
+  .col.result { overflow:auto; }
+  .row { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  button { background:var(--accent); color:#0b1020; border:0; border-radius:8px; padding:9px 14px;
+           font-weight:700; cursor:pointer; font-size:13px; }
+  button.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  input[type=file]{ display:none; }
+  .file-label { background:transparent; border:1px dashed var(--line); color:var(--muted);
+                 border-radius:8px; padding:9px 14px; cursor:pointer; font-size:13px; }
+  /* magnifier */
+  #mag { position:fixed; width:540px; height:540px; border-radius:12px; border:2px solid var(--accent);
+         box-shadow:0 8px 30px rgba(0,0,0,.5); pointer-events:none; display:none; z-index:50; background:#000; }
+  /* gauges */
+  .gauge { margin:14px 0; }
+  .gauge .lab { display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:6px; }
+  .gauge .lab b { color:var(--ink); }
+  .bar { position:relative; height:26px; border-radius:6px; overflow:hidden; background:#11141b; border:1px solid var(--line); }
+  .bar .a { position:absolute; left:0; top:0; bottom:0; background:var(--blue); }
+  .bar .b { position:absolute; right:0; top:0; bottom:0; background:#f0a13a; }
+  .bar .mid { position:absolute; left:50%; top:0; bottom:0; width:0; border-left:2px dashed rgba(255,255,255,.6); }
+  .bar .mk { position:absolute; top:-3px; width:0; height:32px; border-left:2px solid #fff; }
+  .stat { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .stat span:last-child { font-variant-numeric:tabular-nums; font-weight:700; }
+  .grade { margin-top:12px; padding:12px; border-radius:10px; background:#11141b; border:1px solid var(--line); text-align:center; }
+  .grade .g { font-size:26px; font-weight:800; color:var(--green); }
+  .grade .gl { font-size:12px; color:var(--muted); }
+  .legend { font-size:11.5px; color:var(--muted); margin-top:8px; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:2px; margin:0 4px 0 10px; vertical-align:middle; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎴 Pokémon Card Centering</h1>
+  <span class="hint">① Set the outer corners → ② Set the inner/outer borders → ③ The centering ratio is computed live. Drag to reveal a magnifier.</span>
+</header>
+
+<div class="grid">
+  <!-- STEP 1 -->
+  <section class="col">
+    <h2><span class="num">1</span> Outer corners (perspective)</h2>
+    <p class="sub" id="sub1">Upload a photo of a flat (not warped/bent) card that fills at least 50% of the frame. The four corners are auto-detected — drag the handles to fine-tune.</p>
+    <div class="canvas-wrap"><canvas id="cv1"></canvas></div>
+    <div class="row">
+      <label class="file-label" for="file">📁 Upload image</label>
+      <input type="file" id="file" accept="image/*">
+      <button id="btnWarp" disabled>Rectify →</button>
+    </div>
+  </section>
+
+  <!-- STEP 2 -->
+  <section class="col">
+    <h2><span class="num">2</span> Inner / Outer borders</h2>
+    <p class="sub" id="sub2">Drag the green (outer) and red (inner) border lines to fit the rectified card.</p>
+    <div class="canvas-wrap"><canvas id="cv2"></canvas></div>
+    <div class="row">
+      <button class="ghost" id="btnReset" disabled>Reset to suggested</button>
+    </div>
+    <p class="legend"><span class="dot" style="background:#00e676"></span>Outer (card edge)
+       <span class="dot" style="background:var(--red)"></span>Inner (art edge)</p>
+  </section>
+
+  <!-- STEP 3 -->
+  <section class="col result">
+    <h2><span class="num">3</span> Centering result (live)</h2>
+    <p class="sub">Updates instantly as you drag in step ②.</p>
+    <div class="gauge">
+      <div class="lab"><span>L <b id="lLab">–</b></span><span>L / R</span><span><b id="rLab">–</b> R</span></div>
+      <div class="bar"><div class="a" id="lrA"></div><div class="b" id="lrB"></div><div class="mid"></div><div class="mk" id="lrMk"></div></div>
+    </div>
+    <div class="gauge">
+      <div class="lab"><span>T <b id="tLab">–</b></span><span>T / B</span><span><b id="bLab">–</b> B</span></div>
+      <div class="bar"><div class="a" id="tbA"></div><div class="b" id="tbB"></div><div class="mid"></div><div class="mk" id="tbMk"></div></div>
+    </div>
+    <div class="stat"><span>Left / Right margin (px)</span><span id="lrPx">–</span></div>
+    <div class="stat"><span>Top / Bottom margin (px)</span><span id="tbPx">–</span></div>
+    <div class="stat"><span>Worst axis</span><span id="worst">–</span></div>
+    <div class="grade">
+      <div class="g" id="grade">–</div>
+      <div class="gl" id="gradeLabel">Set the borders</div>
+    </div>
+  </section>
+</div>
+
+<canvas id="mag" width="540" height="540"></canvas>
+
+<script>
+const S = { img:null, id:null, ow:0, oh:0, corners:null,
+            warp:null, wcw:0, wch:0, outer:null, inner:null };
+
+// ---- helpers ---------------------------------------------------------------
+const $ = id => document.getElementById(id);
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+
+// plain dashed polyline through points [[x,y],...] (closed)
+function dashPoly(ctx, pts, col, w=3, dash=[11,8]){
+  ctx.strokeStyle=col; ctx.lineWidth=w; ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]);
+  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]);
+  ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+}
+
+// diamond-dashed line: place small rhombuses along the segment a->b
+function diamondLine(ctx, ax, ay, bx, by, col, h=6, step=17){
+  const dx=bx-ax, dy=by-ay, len=Math.hypot(dx,dy);
+  if(len<0.5) return;
+  const ux=dx/len, uy=dy/len;
+  ctx.fillStyle=col;
+  for(let d=0; d<=len; d+=step){
+    const px=ax+ux*d, py=ay+uy*d;
+    ctx.beginPath();
+    ctx.moveTo(px, py-h); ctx.lineTo(px+h, py); ctx.lineTo(px, py+h); ctx.lineTo(px-h, py);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+function fit(canvas, iw, ih){
+  const wrap = canvas.parentElement;
+  const availW = wrap.clientWidth - 2, availH = wrap.clientHeight - 2;
+  const s = Math.min(availW/iw, availH/ih);          // CSS px per image px
+  const dw = Math.round(iw*s), dh = Math.round(ih*s);
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.style.width = dw+"px"; canvas.style.height = dh+"px";
+  canvas.width = Math.round(dw*dpr); canvas.height = Math.round(dh*dpr);  // crisp backing store
+  canvas._dw = dw; canvas._dh = dh; canvas._dpr = dpr;
+  return s;
+}
+
+// ---- magnifier -------------------------------------------------------------
+const mag = $("mag"), mg = mag.getContext("2d");
+const MS = 540, MR = 340;         // box (px) & sample radius (source px) -> ~0.79x, bigger UI
+const SENS = 1/1.5;               // precision drag: handle moves at 1/1.5x the cursor speed
+const OUTER_COL = "#00e676", INNER_COL = "#e60028";   // bright-green outer, deep-red inner
+// overlay(toMag): draw the current UI guide lines inside the magnifier so the
+// user can align them to the real card edges visible around the cursor.
+function showMag(srcImg, sx, sy, clientX, clientY, overlay){
+  mag.style.display = "block";
+  let mx = clientX + 26, my = clientY - MS - 20;
+  if (my < 8) my = clientY + 26;
+  if (mx + MS > innerWidth) mx = clientX - MS - 26;
+  if (mx < 8) mx = 8;
+  mag.style.left = mx+"px"; mag.style.top = my+"px";
+  mg.clearRect(0,0,MS,MS);
+  mg.imageSmoothingEnabled = false;
+  mg.drawImage(srcImg, sx-MR, sy-MR, 2*MR, 2*MR, 0,0,MS,MS);
+  const k = MS/(2*MR);
+  const toMag = (x,y) => [ (x-(sx-MR))*k, (y-(sy-MR))*k ];   // source px -> mag px
+  if (overlay) overlay(toMag);
+  const c = MS/2;                                            // mark the exact handle point
+  mg.strokeStyle = "#fff"; mg.lineWidth = 1.5; mg.beginPath(); mg.arc(c,c,4,0,7); mg.stroke();
+}
+const hideMag = () => mag.style.display = "none";
+
+// ---- client-side perspective warp (used when no backend is available, e.g.
+//      GitHub Pages). Geometry is exact; only the displayed pixels are sampled. --
+const CARD_ASPECT = 63/88;
+function getPerspectiveTransform(from, to){
+  // returns flat 3x3 H (h0..h8, h8=1) mapping 'from' points -> 'to' points
+  const A=[], b=[];
+  for(let i=0;i<4;i++){
+    const [fx,fy]=from[i], [tx,ty]=to[i];
+    A.push([fx,fy,1,0,0,0,-fx*tx,-fy*tx]); b.push(tx);
+    A.push([0,0,0,fx,fy,1,-fx*ty,-fy*ty]); b.push(ty);
+  }
+  // Gaussian elimination on the 8x8 system
+  for(let c=0;c<8;c++){
+    let piv=c; for(let r=c+1;r<8;r++) if(Math.abs(A[r][c])>Math.abs(A[piv][c])) piv=r;
+    [A[c],A[piv]]=[A[piv],A[c]]; [b[c],b[piv]]=[b[piv],b[c]];
+    const d=A[c][c]||1e-12;
+    for(let r=0;r<8;r++){ if(r===c) continue; const k=A[r][c]/d;
+      for(let j=c;j<8;j++) A[r][j]-=k*A[c][j]; b[r]-=k*b[c]; }
+  }
+  const h=b.map((v,i)=>v/(A[i][i]||1e-12));
+  return [h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7],1];
+}
+// suggest the inner border (art boundary) from the warped pixels: sample the
+// border colour just inside the card edge, then per side scan inward to the
+// first sustained colour departure (median across the side). Mirrors the
+// backend's borders.measure so the suggestion works with no server.
+function _med(a){ a=a.slice().sort((x,y)=>x-y); return a[a.length>>1]; }
+function suggestInner(od, W, H, m, cardW, cardH){
+  const short=Math.min(cardW,cardH);
+  const at=(x,y)=>{ const o=((y|0)*W+(x|0))*4; return [od[o],od[o+1],od[o+2]]; };
+  const dist=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]);
+  const off0=Math.max(4, Math.round(0.015*short));   // skip the very edge
+  const refBand=Math.round(0.022*short);              // border-colour sample band
+  const THR=60, scan=Math.round(0.24*short);
+  // sample a point at inward offset d along a side at fraction t
+  function pt(side,t,d){
+    if(side==='l') return at(m+d, m+t*cardH);
+    if(side==='r') return at(m+cardW-d, m+t*cardH);
+    if(side==='t') return at(m+t*cardW, m+d);
+    return at(m+t*cardW, m+cardH-d);
+  }
+  function edge(side){
+    // per-side reference colour (median of the border just inside the edge)
+    const cr=[],cg=[],cb=[];
+    for(let t=0.15;t<0.85;t+=0.02) for(let d=off0; d<off0+refBand; d+=3){
+      const c=pt(side,t,d); cr.push(c[0]); cg.push(c[1]); cb.push(c[2]);
+    }
+    const ref=[_med(cr),_med(cg),_med(cb)];
+    const vals=[];
+    for(let t=0.12;t<0.88;t+=0.01){
+      for(let d=off0+refBand; d<scan; d++){
+        if(dist(pt(side,t,d),ref)>THR){
+          // require the departure to be sustained (not a speck of noise)
+          let ok=true;
+          for(let e=2;e<=6;e++) if(dist(pt(side,t,d+e),ref) < THR*0.6){ ok=false; break; }
+          if(ok){ vals.push(d); break; }
+        }
+      }
+    }
+    return vals.length>=10 ? _med(vals) : Math.round(0.07*short);
+  }
+  // a border has ~uniform width; snap any wildly-off side (holo/low-contrast)
+  // to the median so one bad edge can't produce a crazy rectangle.
+  const e={l:edge('l'), r:edge('r'), t:edge('t'), b:edge('b')};
+  const md=_med([e.l,e.r,e.t,e.b]);
+  for(const k of ['l','r','t','b']) if(e[k]>2.2*md || e[k]<0.45*md) e[k]=md;
+  return { left:m+e.l, top:m+e.t, right:m+cardW-e.r, bottom:m+cardH-e.b };
+}
+function warpClient(img, corners){
+  const cardH=1500, cardW=Math.round(cardH*CARD_ASPECT);
+  const m=Math.round(0.05*cardW), cw=cardW+2*m, ch=cardH+2*m;
+  const dst=[[m,m],[m+cardW-1,m],[m+cardW-1,m+cardH-1],[m,m+cardH-1]];
+  const src=corners.map(c=>[c.x,c.y]);
+  const H=getPerspectiveTransform(dst, src);           // output px -> source px
+  const long=Math.max(img.naturalWidth,img.naturalHeight), f=Math.min(1,2200/long);
+  const sw=Math.round(img.naturalWidth*f), sh=Math.round(img.naturalHeight*f);
+  const sc=document.createElement("canvas"); sc.width=sw; sc.height=sh;
+  const sctx=sc.getContext("2d"); sctx.drawImage(img,0,0,sw,sh);
+  const sd=sctx.getImageData(0,0,sw,sh).data;
+  const oc=document.createElement("canvas"); oc.width=cw; oc.height=ch;
+  const octx=oc.getContext("2d"); const out=octx.createImageData(cw,ch), od=out.data;
+  for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){
+    const wz=H[6]*x+H[7]*y+H[8];
+    const sx=(H[0]*x+H[1]*y+H[2])/wz*f, sy=(H[3]*x+H[4]*y+H[5])/wz*f;
+    const o=(y*cw+x)*4;
+    if(sx<0||sy<0||sx>=sw-1||sy>=sh-1){ od[o+3]=0; continue; }
+    const x0=sx|0, y0=sy|0, dx=sx-x0, dy=sy-y0;
+    const p00=(y0*sw+x0)*4, p10=p00+4, p01=p00+sw*4, p11=p01+4;
+    for(let k=0;k<3;k++){
+      const top=sd[p00+k]*(1-dx)+sd[p10+k]*dx, bot=sd[p01+k]*(1-dx)+sd[p11+k]*dx;
+      od[o+k]=top*(1-dy)+bot*dy;
+    }
+    od[o+3]=255;
+  }
+  octx.putImageData(out,0,0);
+  return { canvas:oc, w:cw, h:ch,
+    outer:{left:m,top:m,right:m+cardW,bottom:m+cardH},
+    inner:suggestInner(od, cw, ch, m, cardW, cardH) };
+}
+
+// ============================ STEP 1 =======================================
+const cv1 = $("cv1"), c1 = cv1.getContext("2d");
+let s1 = 1, drag1 = -1, drag1Start = null;
+const LABELS = ["TL","TR","BR","BL"];
+
+function draw1(){
+  if(!S.img) return;
+  c1.setTransform(cv1._dpr,0,0,cv1._dpr,0,0);
+  c1.clearRect(0,0,cv1._dw,cv1._dh);
+  c1.imageSmoothingQuality = "high";
+  c1.drawImage(S.img, 0,0, cv1._dw, cv1._dh);
+  const P = S.corners.map(p => ({x:p.x*s1, y:p.y*s1}));
+  dashPoly(c1, P.map(p=>[p.x,p.y]), OUTER_COL);
+  P.forEach((p,i)=>{
+    c1.fillStyle = i===drag1 ? "#ffffff" : "#7c9cff";
+    c1.beginPath(); c1.arc(p.x,p.y,7,0,7); c1.fill();
+    c1.fillStyle="#0b1020"; c1.font="10px sans-serif"; c1.textAlign="center"; c1.textBaseline="middle";
+    c1.fillText(LABELS[i], p.x, p.y);
+  });
+}
+function evtPos(cv, e){ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top, cx:e.clientX, cy:e.clientY}; }
+
+cv1.addEventListener("pointerdown", e=>{
+  if(!S.img) return; const p=evtPos(cv1,e); let best=-1,bd=1e9;
+  S.corners.forEach((c,i)=>{ const d=Math.hypot(c.x*s1-p.x, c.y*s1-p.y); if(d<bd){bd=d;best=i;} });
+  if(bd<22){ drag1=best; drag1Start={mx:p.x, my:p.y, cx:S.corners[best].x, cy:S.corners[best].y};
+             cv1.setPointerCapture(e.pointerId); moveCorner(p); }
+});
+cv1.addEventListener("pointermove", e=>{ if(drag1<0) return; moveCorner(evtPos(cv1,e)); });
+cv1.addEventListener("pointerup", ()=>{ drag1=-1; hideMag(); draw1(); });
+function moveCorner(p){
+  // precision drag: apply half of the cursor delta to the corner
+  const x = clamp(drag1Start.cx + (p.x-drag1Start.mx)/s1*SENS, 0, S.ow);
+  const y = clamp(drag1Start.cy + (p.y-drag1Start.my)/s1*SENS, 0, S.oh);
+  S.corners[drag1] = {x,y}; draw1();
+  showMag(S.img, x, y, p.cx, p.cy, toMag=>{
+    dashPoly(mg, S.corners.map(c=>toMag(c.x,c.y)), OUTER_COL);
+  });
+}
+
+$("file").addEventListener("change", e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); });
+async function loadFile(f){
+  $("sub1").textContent = "Analyzing…";
+  const img = new Image();
+  img.onload = async ()=>{
+    S.img = img; S.ow = img.naturalWidth; S.oh = img.naturalHeight;
+    s1 = fit(cv1, S.ow, S.oh);
+    // default box while waiting
+    S.corners = [{x:S.ow*.12,y:S.oh*.12},{x:S.ow*.88,y:S.oh*.12},{x:S.ow*.88,y:S.oh*.88},{x:S.ow*.12,y:S.oh*.88}];
+    draw1();
+    try{
+      const fd = new FormData(); fd.append("file", f);
+      const r = await fetch("api/detect",{method:"POST",body:fd});
+      if(!r.ok) throw 0;
+      const j = await r.json();
+      S.id = j.id; S.corners = j.corners.map(p=>({x:p[0],y:p[1]}));
+      $("sub1").textContent = "Auto-detected — drag the handles to align precisely with the four card corners.";
+    }catch(err){
+      S.id = null;
+      $("sub1").textContent = "Drag the four handles onto the card's corners. A magnifier appears while dragging.";
+    }
+    draw1(); $("btnWarp").disabled = false;
+  };
+  img.src = URL.createObjectURL(f);
+}
+
+$("btnWarp").addEventListener("click", async ()=>{
+  if(!S.img) return;
+  $("sub2").textContent = "Rectifying…";
+  let data = null;
+  if(S.id){                                    // try the optional backend warp
+    try{
+      const r = await fetch("api/warp",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({id:S.id, corners:S.corners.map(c=>[c.x,c.y])})});
+      if(r.ok) data = await r.json();
+    }catch(e){}
+  }
+  if(data){
+    const wi = new Image();
+    wi.onload = ()=> setWarp(wi, data.w, data.h, data.outer, data.inner);
+    wi.src = data.image;
+  }else{                                        // client-side warp (no backend needed)
+    await new Promise(r=>setTimeout(r,10));     // let "Rectifying…" paint first
+    const res = warpClient(S.img, S.corners);
+    setWarp(res.canvas, res.w, res.h, res.outer, res.inner);
+  }
+});
+function setWarp(drawable, w, h, outer, inner){
+  S.warp=drawable; S.wcw=w; S.wch=h; S.outer={...outer}; S.inner={...inner};
+  s2 = fit(cv2, w, h); draw2(); recompute();
+  $("btnReset").disabled=false;
+  $("sub2").textContent = "Drag the green (outer) and red (inner) lines to fit. A magnifier appears while dragging.";
+}
+
+// ============================ STEP 2 =======================================
+const cv2 = $("cv2"), c2 = cv2.getContext("2d");
+let s2 = 1, drag2 = null, drag2Start = null;   // {rect:'outer'|'inner', edge:'l'|'r'|'t'|'b'}
+const EKEY = {l:'left', r:'right', t:'top', b:'bottom'};
+
+function draw2(){
+  if(!S.warp) return;
+  c2.setTransform(cv2._dpr,0,0,cv2._dpr,0,0);
+  c2.clearRect(0,0,cv2._dw,cv2._dh);
+  c2.imageSmoothingQuality = "high";
+  c2.drawImage(S.warp, 0,0, cv2._dw, cv2._dh);
+  drawRect(S.outer, OUTER_COL); drawRect(S.inner, INNER_COL);
+}
+function drawRect(R, col){
+  const l=R.left*s2,t=R.top*s2,r=R.right*s2,b=R.bottom*s2;
+  diamondLine(c2,l,t,r,t,col); diamondLine(c2,r,t,r,b,col);
+  diamondLine(c2,r,b,l,b,col); diamondLine(c2,l,b,l,t,col);
+  c2.fillStyle=col;
+  const H=[[ (l+r)/2, t],[ (l+r)/2, b],[ l,(t+b)/2],[ r,(t+b)/2]];
+  H.forEach(([x,y])=>{ c2.beginPath(); c2.rect(x-5,y-5,10,10); c2.fill(); });
+}
+function pickEdge(p){
+  const near=(v,w)=>Math.abs(v-w)<12;
+  for(const rect of ["inner","outer"]){        // inner first (drawn on top / priority)
+    const R=S[rect], l=R.left*s2,t=R.top*s2,r=R.right*s2,b=R.bottom*s2;
+    const inY = p.y>t-14 && p.y<b+14, inX = p.x>l-14 && p.x<r+14;
+    if(near(p.x,l)&&inY) return {rect,edge:'l'};
+    if(near(p.x,r)&&inY) return {rect,edge:'r'};
+    if(near(p.y,t)&&inX) return {rect,edge:'t'};
+    if(near(p.y,b)&&inX) return {rect,edge:'b'};
+  }
+  return null;
+}
+cv2.addEventListener("pointerdown", e=>{
+  if(!S.warp) return; const p=evtPos(cv2,e); const hit=pickEdge(p);
+  if(hit){ drag2=hit; drag2Start={mx:p.x, my:p.y, val:S[hit.rect][EKEY[hit.edge]]};
+           cv2.setPointerCapture(e.pointerId); moveEdge(p); }
+});
+cv2.addEventListener("pointermove", e=>{
+  if(!S.warp) return; const p=evtPos(cv2,e);
+  if(drag2){ moveEdge(p); }
+  else { const h=pickEdge(p); cv2.style.cursor = h ? (h.edge==='l'||h.edge==='r'?'ew-resize':'ns-resize') : 'default'; }
+});
+cv2.addEventListener("pointerup", ()=>{ drag2=null; hideMag(); draw2(); });
+function moveEdge(p){
+  const R=S[drag2.rect], KEY=EKEY[drag2.edge], vert=(drag2.edge==='l'||drag2.edge==='r');
+  // precision drag: apply half of the cursor delta to the edge position
+  const nv = drag2Start.val + (vert ? (p.x-drag2Start.mx) : (p.y-drag2Start.my))/s2*SENS;
+  if(drag2.edge==='l') R.left  = clamp(Math.min(nv, R.right-4), 0, S.wcw);
+  if(drag2.edge==='r') R.right = clamp(Math.max(nv, R.left+4), 0, S.wcw);
+  if(drag2.edge==='t') R.top   = clamp(Math.min(nv, R.bottom-4), 0, S.wch);
+  if(drag2.edge==='b') R.bottom= clamp(Math.max(nv, R.top+4), 0, S.wch);
+  draw2(); recompute();
+  const wx=clamp(p.x/s2,0,S.wcw), wy=clamp(p.y/s2,0,S.wch);
+  const sx = vert ? R[KEY] : wx;     // edge x for l/r, mouse x for t/b
+  const sy = vert ? wy : R[KEY];     // mouse y for l/r, edge y for t/b
+  showMag(S.warp, sx, sy, p.cx, p.cy, toMag=>{
+    for(const [name,col] of [["outer",OUTER_COL],["inner",INNER_COL]]){
+      const Q = S[name]; const [l,t] = toMag(Q.left,Q.top), [r,b] = toMag(Q.right,Q.bottom);
+      diamondLine(mg,l,t,r,t,col); diamondLine(mg,r,t,r,b,col);
+      diamondLine(mg,r,b,l,b,col); diamondLine(mg,l,b,l,t,col);
+    }
+  });
+}
+$("btnReset").addEventListener("click", async ()=>{ $("btnWarp").click(); });
+
+// ============================ STEP 3 =======================================
+const GRADES = [[55,10,"Gem Mint"],[60,9,"Mint"],[65,8,"NM-Mint"],[70,7,"Near Mint"],
+                [75,6,"Excellent"],[80,5,"VG-EX"],[90,4,"Good"],[100,3,"Poor"]];
+function gradeFor(w){ for(const [th,g,l] of GRADES) if(w<=th) return [g,l]; return [1,"Poor"]; }
+function pct(a,b){ return 100*a/(a+b); }
+function recompute(){
+  if(!S.outer||!S.inner) return;
+  const L=S.inner.left-S.outer.left, R=S.outer.right-S.inner.right;
+  const T=S.inner.top-S.outer.top,  B=S.outer.bottom-S.inner.bottom;
+  if(L<0||R<0||T<0||B<0){ $("gradeLabel").textContent="Inner is larger than outer"; }
+  const lr=pct(L,R), tb=pct(T,B);
+  setGauge("lr",lr,"L","R"); setGauge("tb",tb,"T","B");
+  $("lrPx").textContent = `${L.toFixed(0)} / ${R.toFixed(0)}`;
+  $("tbPx").textContent = `${T.toFixed(0)} / ${B.toFixed(0)}`;
+  const worst = Math.max(lr,100-lr,tb,100-tb);
+  $("worst").textContent = `${worst.toFixed(1)} / ${(100-worst).toFixed(1)}`;
+  const [g,l]=gradeFor(worst); $("grade").textContent=g; $("gradeLabel").textContent=l;
+}
+function setGauge(k, a, la, lb){
+  $(k+"A").style.width = a+"%"; $(k+"B").style.width = (100-a)+"%";
+  $(k+"Mk").style.left = a+"%";
+  $((k==="lr"?"l":"t")+"Lab").textContent = a.toFixed(1)+"%";
+  $((k==="lr"?"r":"b")+"Lab").textContent = (100-a).toFixed(1)+"%";
+}
+
+addEventListener("resize", ()=>{ if(S.img){ s1=fit(cv1,S.ow,S.oh); draw1(); }
+                                  if(S.warp){ s2=fit(cv2,S.wcw,S.wch); draw2(); } });
+</script>
+</body>
+</html>
