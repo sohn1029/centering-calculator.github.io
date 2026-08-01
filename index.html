@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
-<title>Pokémon Card Centering</title>
+<title>Pokemon Card Centering Calculator</title>
 <style>
   :root { --bg:#0f1115; --panel:#181b22; --line:#2a2f3a; --ink:#e7e9ee; --muted:#9aa3b2;
           --blue:#0047d6; --red:#e60028; --green:#22c55e; --accent:#7c9cff; }
@@ -15,7 +15,8 @@
          display:flex; flex-direction:column;
          font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
   header { padding:10px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center;
-           gap:16px; flex:0 0 auto; }
+           gap:14px; flex:0 0 auto; }
+  header img.logo { height:26px; width:auto; display:block; flex:0 0 auto; }
   header h1 { font-size:15px; margin:0; font-weight:650; white-space:nowrap; }
   header .hint { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .grid { flex:1 1 auto; min-height:0; display:grid; grid-template-columns:1fr 1fr 1fr;
@@ -43,6 +44,14 @@
   .slider { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
   .slider input[type=range]{ width:130px; accent-color:var(--accent); }
   .slider span { min-width:26px; text-align:right; color:var(--ink); font-variant-numeric:tabular-nums; }
+  /* aspect-ratio selector */
+  .aspect-row { display:flex; align-items:center; gap:14px; font-size:12px; color:var(--muted);
+                margin:0 0 8px; flex-wrap:wrap; flex:0 0 auto; }
+  .aspect-row label { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+  .aspect-row input[type=radio]{ accent-color:var(--accent); }
+  .aspect-row .free { display:inline-flex; align-items:center; gap:5px; }
+  .aspect-row input[type=number]{ width:54px; background:#11141b; border:1px solid var(--line);
+                color:var(--ink); border-radius:6px; padding:3px 6px; font-size:12px; }
   /* magnifier */
   #mag { position:fixed; width:540px; height:540px; border-radius:12px; border:2px solid var(--accent);
          box-shadow:0 8px 30px rgba(0,0,0,.5); pointer-events:none; display:none; z-index:50; background:#000; }
@@ -66,7 +75,8 @@
 </head>
 <body>
 <header>
-  <h1>🎴 Pokémon Card Centering</h1>
+  <img class="logo" src="pokemon-tcg-logo.webp" alt="Pokémon Trading Card Game">
+  <h1>Pokemon Card Centering Calculator</h1>
   <span class="hint">① Set the outer corners → ② Set the inner/outer borders → ③ The centering ratio is computed live. Drag to reveal a magnifier.</span>
 </header>
 
@@ -75,6 +85,15 @@
   <section class="col">
     <h2><span class="num">1</span> Outer corners (perspective)</h2>
     <p class="sub" id="sub1">Upload a photo of a flat (not warped/bent) card that fills at least 50% of the frame. The four corners are auto-detected — drag the handles to fine-tune.</p>
+    <div class="aspect-row" id="aspectRow">
+      <label><input type="radio" name="aspect" value="pokemon" checked> Pokémon card (63:88)</label>
+      <label><input type="radio" name="aspect" value="a4"> A4 (210:297)</label>
+      <label><input type="radio" name="aspect" value="free"> Free</label>
+      <span class="free" id="freeInputs" style="display:none">
+        <input type="number" id="arW" value="63" min="1" step="any" aria-label="width ratio"> :
+        <input type="number" id="arH" value="88" min="1" step="any" aria-label="height ratio">
+      </span>
+    </div>
     <div class="canvas-wrap"><canvas id="cv1"></canvas></div>
     <div class="row">
       <label class="file-label" for="file">📁 Upload image</label>
@@ -191,7 +210,18 @@ const hideMag = () => mag.style.display = "none";
 
 // ---- client-side perspective warp (used when no backend is available, e.g.
 //      GitHub Pages). Geometry is exact; only the displayed pixels are sampled. --
-const CARD_ASPECT = 63/88;
+// Target aspect ratio (width / height) the card is rectified to, chosen by the
+// Step-1 radio buttons: Pokémon 63:88, A4 210:297, or a free custom ratio.
+function getAspect(){
+  const sel = document.querySelector('input[name="aspect"]:checked');
+  const v = sel ? sel.value : "pokemon";
+  if(v==="a4") return 210/297;
+  if(v==="free"){
+    const w=parseFloat($("arW").value), h=parseFloat($("arH").value);
+    if(w>0 && h>0) return w/h;
+  }
+  return 63/88;
+}
 
 // ---- barrel/pincushion lens distortion, centred on the 4-corner centroid -----
 // Straight card edges bow due to the lens; a single coefficient k (from the Step
@@ -379,8 +409,12 @@ function autoCorners(img){
   return S4.map(p=>({x:clamp(p.x,0,W), y:clamp(p.y,0,H)}));   // keep handles on-canvas
 }
 function warpClient(img, corners, k=0, marginFrac=0.05){
-  const cardH=1500, cardW=Math.round(cardH*CARD_ASPECT);
-  const m=Math.round(marginFrac*cardW), cw=cardW+2*m, ch=cardH+2*m;
+  // long edge fixed at 1500px; short edge follows the chosen aspect ratio
+  const aspect=getAspect();
+  let cardW, cardH;
+  if(aspect<=1){ cardH=1500; cardW=Math.round(cardH*aspect); }
+  else         { cardW=1500; cardH=Math.round(cardW/aspect); }
+  const m=Math.round(marginFrac*Math.min(cardW,cardH)), cw=cardW+2*m, ch=cardH+2*m;
   const dst=[[m,m],[m+cardW-1,m],[m+cardW-1,m+cardH-1],[m,m+cardH-1]];
   const C=barrelCR(corners);
   const uc=corners.map(c=>undistort(c.x,c.y,C,k));      // straight-edged (undistorted) quad
@@ -453,6 +487,16 @@ function moveCorner(p){
 }
 
 $("file").addEventListener("change", e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); });
+// aspect-ratio selector: show custom inputs only for "Free"; re-rectify live so
+// the change is reflected immediately if the card has already been warped.
+function onAspectChange(){
+  const free = document.querySelector('input[name="aspect"]:checked').value==="free";
+  $("freeInputs").style.display = free ? "inline-flex" : "none";
+  if(S.warp) $("btnWarp").click();
+}
+document.querySelectorAll('input[name="aspect"]').forEach(r=>r.addEventListener("change", onAspectChange));
+$("arW").addEventListener("input", ()=>{ if(S.warp) $("btnWarp").click(); });
+$("arH").addEventListener("input", ()=>{ if(S.warp) $("btnWarp").click(); });
 $("barrel").addEventListener("input", e=>{
   S.k = (+e.target.value)/100 * BARREL_MAX;
   $("barrelVal").textContent = e.target.value;
@@ -509,7 +553,8 @@ $("btnWarp").addEventListener("click", async ()=>{
   if(!S.img) return;
   $("sub2").textContent = "Rectifying…";
   let data = null;
-  if(USE_BACKEND && S.id && S.k===0){            // backend warp (no barrel support)
+  const isPokemon = document.querySelector('input[name="aspect"]:checked').value==="pokemon";
+  if(USE_BACKEND && S.id && S.k===0 && isPokemon){   // backend warp (Pokémon ratio, no barrel)
     try{
       const r = await fetch("api/warp",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({id:S.id, corners:S.corners.map(c=>[c.x,c.y])})});
