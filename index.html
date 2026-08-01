@@ -40,6 +40,9 @@
   input[type=file]{ display:none; }
   .file-label { background:transparent; border:1px dashed var(--line); color:var(--muted);
                  border-radius:8px; padding:9px 14px; cursor:pointer; font-size:13px; }
+  .slider { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
+  .slider input[type=range]{ width:130px; accent-color:var(--accent); }
+  .slider span { min-width:26px; text-align:right; color:var(--ink); font-variant-numeric:tabular-nums; }
   /* magnifier */
   #mag { position:fixed; width:540px; height:540px; border-radius:12px; border:2px solid var(--accent);
          box-shadow:0 8px 30px rgba(0,0,0,.5); pointer-events:none; display:none; z-index:50; background:#000; }
@@ -77,6 +80,12 @@
       <label class="file-label" for="file">📁 Upload image</label>
       <input type="file" id="file" accept="image/*">
       <button id="btnWarp" disabled>Rectify →</button>
+    </div>
+    <div class="row" id="barrelRow" style="display:none">
+      <label class="slider">Lens curve
+        <input type="range" id="barrel" min="-100" max="100" value="0">
+        <span id="barrelVal">0</span></label>
+      <button class="ghost" id="btnDownload">⬇ Download straightened card</button>
     </div>
   </section>
 
@@ -117,8 +126,9 @@
 <canvas id="mag" width="540" height="540"></canvas>
 
 <script>
-const S = { img:null, id:null, ow:0, oh:0, corners:null,
+const S = { img:null, id:null, ow:0, oh:0, corners:null, k:0,
             warp:null, wcw:0, wch:0, outer:null, inner:null };
+const BARREL_MAX = 0.28;   // slider 100 -> k = 0.28
 // The optional Python backend (auto corner detection) only runs on localhost.
 // On static hosting (e.g. GitHub Pages) skip it and use the built-in browser
 // path — otherwise POSTs to /api/* return a harmless-but-confusing 405.
@@ -182,6 +192,46 @@ const hideMag = () => mag.style.display = "none";
 // ---- client-side perspective warp (used when no backend is available, e.g.
 //      GitHub Pages). Geometry is exact; only the displayed pixels are sampled. --
 const CARD_ASPECT = 63/88;
+
+// ---- barrel/pincushion lens distortion, centred on the 4-corner centroid -----
+// Straight card edges bow due to the lens; a single coefficient k (from the Step
+// 1 slider) models it as a radial term. distort(): undistorted -> source (the
+// easy forward direction, used per-pixel in the warp). undistort(): source ->
+// undistorted (Newton on the radius, used only for the 4 corners + guide curves).
+function barrelCR(corners){
+  let cx=0,cy=0; for(const p of corners){ cx+=p.x; cy+=p.y; } cx/=4; cy/=4;
+  let R=0; for(const p of corners) R+=Math.hypot(p.x-cx,p.y-cy); R/=4;
+  return {cx,cy,R:Math.max(1,R)};
+}
+function distort(x,y, C,k){                    // undistorted -> source
+  const dx=x-C.cx, dy=y-C.cy, r=Math.hypot(dx,dy)/C.R;
+  const f=1 + k*r*r;
+  return {x:C.cx+dx*f, y:C.cy+dy*f};
+}
+function undistort(x,y, C,k){                   // source -> undistorted (invert radius)
+  const dx=x-C.cx, dy=y-C.cy, rp=Math.hypot(dx,dy);
+  if(rp<1e-6) return {x,y};
+  let ru=rp;                                    // solve ru*(1+k*(ru/R)^2)=rp
+  for(let i=0;i<6;i++){
+    const t=ru/C.R, f=1+k*t*t, g=ru*f-rp, gp=f+2*k*t*t;
+    ru-=g/gp;
+  }
+  const s=ru/rp;
+  return {x:C.cx+dx*s, y:C.cy+dy*s};
+}
+// the 4 card edges as (possibly curved) polylines in source coords
+function barrelOutline(corners,k, n=18){
+  const C=barrelCR(corners), pts=[];
+  for(let i=0;i<4;i++){
+    const A=corners[i], B=corners[(i+1)%4];
+    const uA=undistort(A.x,A.y,C,k), uB=undistort(B.x,B.y,C,k);
+    for(let j=0;j<n;j++){ const t=j/n;
+      const u=distort(uA.x+(uB.x-uA.x)*t, uA.y+(uB.y-uA.y)*t, C,k);
+      pts.push([u.x,u.y]);
+    }
+  }
+  return pts;   // closed loop (source coords)
+}
 function getPerspectiveTransform(from, to){
   // returns flat 3x3 H (h0..h8, h8=1) mapping 'from' points -> 'to' points
   const A=[], b=[];
@@ -328,12 +378,13 @@ function autoCorners(img){
   for(const p of S4) if(p.x<-0.05*W||p.x>1.05*W||p.y<-0.05*H||p.y>1.05*H) return null;
   return S4.map(p=>({x:clamp(p.x,0,W), y:clamp(p.y,0,H)}));   // keep handles on-canvas
 }
-function warpClient(img, corners){
+function warpClient(img, corners, k=0, marginFrac=0.05){
   const cardH=1500, cardW=Math.round(cardH*CARD_ASPECT);
-  const m=Math.round(0.05*cardW), cw=cardW+2*m, ch=cardH+2*m;
+  const m=Math.round(marginFrac*cardW), cw=cardW+2*m, ch=cardH+2*m;
   const dst=[[m,m],[m+cardW-1,m],[m+cardW-1,m+cardH-1],[m,m+cardH-1]];
-  const src=corners.map(c=>[c.x,c.y]);
-  const H=getPerspectiveTransform(dst, src);           // output px -> source px
+  const C=barrelCR(corners);
+  const uc=corners.map(c=>undistort(c.x,c.y,C,k));      // straight-edged (undistorted) quad
+  const H=getPerspectiveTransform(dst, uc.map(p=>[p.x,p.y]));   // output -> undistorted src
   const long=Math.max(img.naturalWidth,img.naturalHeight), f=Math.min(1,2200/long);
   const sw=Math.round(img.naturalWidth*f), sh=Math.round(img.naturalHeight*f);
   const sc=document.createElement("canvas"); sc.width=sw; sc.height=sh;
@@ -343,21 +394,22 @@ function warpClient(img, corners){
   const octx=oc.getContext("2d"); const out=octx.createImageData(cw,ch), od=out.data;
   for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){
     const wz=H[6]*x+H[7]*y+H[8];
-    const sx=(H[0]*x+H[1]*y+H[2])/wz*f, sy=(H[3]*x+H[4]*y+H[5])/wz*f;
-    const o=(y*cw+x)*4;
+    const ux=(H[0]*x+H[1]*y+H[2])/wz, uy=(H[3]*x+H[4]*y+H[5])/wz;   // undistorted src point
+    const spt=distort(ux,uy,C,k);                                   // -> actual (distorted) src
+    const sx=spt.x*f, sy=spt.y*f, o=(y*cw+x)*4;
     if(sx<0||sy<0||sx>=sw-1||sy>=sh-1){ od[o+3]=0; continue; }
     const x0=sx|0, y0=sy|0, dx=sx-x0, dy=sy-y0;
     const p00=(y0*sw+x0)*4, p10=p00+4, p01=p00+sw*4, p11=p01+4;
-    for(let k=0;k<3;k++){
-      const top=sd[p00+k]*(1-dx)+sd[p10+k]*dx, bot=sd[p01+k]*(1-dx)+sd[p11+k]*dx;
-      od[o+k]=top*(1-dy)+bot*dy;
+    for(let ci=0;ci<3;ci++){
+      const top=sd[p00+ci]*(1-dx)+sd[p10+ci]*dx, bot=sd[p01+ci]*(1-dx)+sd[p11+ci]*dx;
+      od[o+ci]=top*(1-dy)+bot*dy;
     }
     od[o+3]=255;
   }
   octx.putImageData(out,0,0);
-  return { canvas:oc, w:cw, h:ch,
-    outer:{left:m,top:m,right:m+cardW,bottom:m+cardH},
-    inner:suggestInner(od, cw, ch, m, cardW, cardH) };
+  const inner = m>0 ? suggestInner(od, cw, ch, m, cardW, cardH)
+                    : {left:0,top:0,right:cw,bottom:ch};
+  return { canvas:oc, w:cw, h:ch, outer:{left:m,top:m,right:m+cardW,bottom:m+cardH}, inner };
 }
 
 // ============================ STEP 1 =======================================
@@ -372,7 +424,7 @@ function draw1(){
   c1.imageSmoothingQuality = "high";
   c1.drawImage(S.img, 0,0, cv1._dw, cv1._dh);
   const P = S.corners.map(p => ({x:p.x*s1, y:p.y*s1}));
-  dashPoly(c1, P.map(p=>[p.x,p.y]), OUTER_COL);
+  dashPoly(c1, barrelOutline(S.corners,S.k).map(([x,y])=>[x*s1,y*s1]), OUTER_COL);
   P.forEach((p,i)=>{
     c1.fillStyle = i===drag1 ? "#ffffff" : "#7c9cff";
     c1.beginPath(); c1.arc(p.x,p.y,7,0,7); c1.fill();
@@ -396,17 +448,31 @@ function moveCorner(p){
   const y = clamp(drag1Start.cy + (p.y-drag1Start.my)/s1*SENS, 0, S.oh);
   S.corners[drag1] = {x,y}; draw1();
   showMag(S.img, x, y, p.cx, p.cy, s1, toMag=>{
-    dashPoly(mg, S.corners.map(c=>toMag(c.x,c.y)), OUTER_COL);
+    dashPoly(mg, barrelOutline(S.corners,S.k).map(([x,y])=>toMag(x,y)), OUTER_COL);
   });
 }
 
 $("file").addEventListener("change", e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); });
+$("barrel").addEventListener("input", e=>{
+  S.k = (+e.target.value)/100 * BARREL_MAX;
+  $("barrelVal").textContent = e.target.value;
+  if(S.img) draw1();
+});
+$("btnDownload").addEventListener("click", ()=>{
+  if(!S.img) return;
+  const { canvas } = warpClient(S.img, S.corners, S.k, 0);   // no margin = card only
+  canvas.toBlob(b=>{ const a=document.createElement("a");
+    a.href=URL.createObjectURL(b); a.download="card_straightened.png"; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1000); }, "image/png");
+});
 async function loadFile(f){
   $("sub1").textContent = "Analyzing…";
   const img = new Image();
   img.onload = async ()=>{
     S.img = img; S.ow = img.naturalWidth; S.oh = img.naturalHeight;
     s1 = fit(cv1, S.ow, S.oh);
+    S.k = 0; $("barrel").value = 0; $("barrelVal").textContent = "0";
+    $("barrelRow").style.display = "flex";
     // default box while waiting
     S.corners = [{x:S.ow*.12,y:S.oh*.12},{x:S.ow*.88,y:S.oh*.12},{x:S.ow*.88,y:S.oh*.88},{x:S.ow*.12,y:S.oh*.88}];
     draw1();
@@ -437,7 +503,7 @@ $("btnWarp").addEventListener("click", async ()=>{
   if(!S.img) return;
   $("sub2").textContent = "Rectifying…";
   let data = null;
-  if(USE_BACKEND && S.id){                      // try the optional backend warp
+  if(USE_BACKEND && S.id && S.k===0){            // backend warp (no barrel support)
     try{
       const r = await fetch("api/warp",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({id:S.id, corners:S.corners.map(c=>[c.x,c.y])})});
@@ -448,9 +514,9 @@ $("btnWarp").addEventListener("click", async ()=>{
     const wi = new Image();
     wi.onload = ()=> setWarp(wi, data.w, data.h, data.outer, data.inner);
     wi.src = data.image;
-  }else{                                        // client-side warp (no backend needed)
+  }else{                                        // client-side warp (barrel-aware)
     await new Promise(r=>setTimeout(r,10));     // let "Rectifying…" paint first
-    const res = warpClient(S.img, S.corners);
+    const res = warpClient(S.img, S.corners, S.k);
     setWarp(res.canvas, res.w, res.h, res.outer, res.inner);
   }
 });
