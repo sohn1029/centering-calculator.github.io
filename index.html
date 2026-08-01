@@ -26,7 +26,7 @@
   .col h2 { font-size:13px; margin:0 0 4px; display:flex; align-items:center; gap:8px; flex:0 0 auto; }
   .num { width:22px; height:22px; border-radius:50%; background:var(--accent); color:#0b1020;
          display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:12px; }
-  .col .sub { color:var(--muted); font-size:12px; margin:0 0 8px; min-height:16px; flex:0 0 auto; }
+  .col .sub { color:var(--muted); font-size:12px; margin:0 0 8px; min-height:32px; flex:0 0 auto; }
   .canvas-wrap { position:relative; background:#0b0d12; border:1px solid var(--line);
                  border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center;
                  min-height:0; flex:1 1 auto; }
@@ -85,7 +85,6 @@
       <label class="slider">Lens curve
         <input type="range" id="barrel" min="-100" max="100" value="0">
         <span id="barrelVal">0</span></label>
-      <button class="ghost" id="btnDownload">⬇ Download straightened card</button>
     </div>
   </section>
 
@@ -96,6 +95,7 @@
     <div class="canvas-wrap"><canvas id="cv2"></canvas></div>
     <div class="row">
       <button class="ghost" id="btnReset" disabled>Reset to suggested</button>
+      <button id="btnDownload" disabled>⬇ Download straightened card</button>
     </div>
     <p class="legend"><span class="dot" style="background:#00e676"></span>Outer (card edge)
        <span class="dot" style="background:var(--red)"></span>Inner (art edge)</p>
@@ -459,9 +459,14 @@ $("barrel").addEventListener("input", e=>{
   if(S.img) draw1();
 });
 $("btnDownload").addEventListener("click", ()=>{
-  if(!S.img) return;
-  const { canvas } = warpClient(S.img, S.corners, S.k, 0);   // no margin = card only
-  canvas.toBlob(b=>{ const a=document.createElement("a");
+  if(!S.warp) return;
+  // crop the rectified preview to the outer (card-edge) rectangle -> no margin
+  const l=Math.round(S.outer.left), t=Math.round(S.outer.top),
+        w=Math.round(S.outer.right-S.outer.left), h=Math.round(S.outer.bottom-S.outer.top);
+  if(w<2||h<2) return;
+  const oc=document.createElement("canvas"); oc.width=w; oc.height=h;
+  oc.getContext("2d").drawImage(S.warp, l,t,w,h, 0,0,w,h);
+  oc.toBlob(b=>{ const a=document.createElement("a");
     a.href=URL.createObjectURL(b); a.download="card_straightened.png"; a.click();
     setTimeout(()=>URL.revokeObjectURL(a.href), 1000); }, "image/png");
 });
@@ -470,9 +475,9 @@ async function loadFile(f){
   const img = new Image();
   img.onload = async ()=>{
     S.img = img; S.ow = img.naturalWidth; S.oh = img.naturalHeight;
-    s1 = fit(cv1, S.ow, S.oh);
     S.k = 0; $("barrel").value = 0; $("barrelVal").textContent = "0";
-    $("barrelRow").style.display = "flex";
+    $("barrelRow").style.display = "flex";   // show BEFORE fit() so the canvas is
+    s1 = fit(cv1, S.ow, S.oh);                // sized to the final wrap height
     // default box while waiting
     S.corners = [{x:S.ow*.12,y:S.oh*.12},{x:S.ow*.88,y:S.oh*.12},{x:S.ow*.88,y:S.oh*.88},{x:S.ow*.12,y:S.oh*.88}];
     draw1();
@@ -494,6 +499,7 @@ async function loadFile(f){
                                   : "Drag the four handles onto the card's corners.")
                               + " A magnifier appears while dragging.";
     }
+    s1 = fit(cv1, S.ow, S.oh);   // re-fit after final layout (sub text settled)
     draw1(); $("btnWarp").disabled = false;
   };
   img.src = URL.createObjectURL(f);
@@ -523,7 +529,7 @@ $("btnWarp").addEventListener("click", async ()=>{
 function setWarp(drawable, w, h, outer, inner){
   S.warp=drawable; S.wcw=w; S.wch=h; S.outer={...outer}; S.inner={...inner};
   s2 = fit(cv2, w, h); draw2(); recompute();
-  $("btnReset").disabled=false;
+  $("btnReset").disabled=false; $("btnDownload").disabled=false;
   $("sub2").textContent = "Drag the green (outer) and red (inner) lines to fit. A magnifier appears while dragging.";
 }
 
