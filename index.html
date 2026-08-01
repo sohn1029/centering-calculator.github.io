@@ -83,7 +83,7 @@
     </div>
     <div class="row" id="barrelRow" style="display:none">
       <label class="slider">Lens curve
-        <input type="range" id="barrel" min="-100" max="100" value="0">
+        <input type="range" id="barrel" min="-50" max="100" value="0">
         <span id="barrelVal">0</span></label>
     </div>
   </section>
@@ -205,7 +205,7 @@ function barrelCR(corners){
 }
 function distort(x,y, C,k){                    // undistorted -> source
   const dx=x-C.cx, dy=y-C.cy, r=Math.hypot(dx,dy)/C.R;
-  const f=1 + k*r*r;
+  const f=Math.max(0.05, 1 + k*r*r);          // clamp so the line can't invert
   return {x:C.cx+dx*f, y:C.cy+dy*f};
 }
 function undistort(x,y, C,k){                   // source -> undistorted (invert radius)
