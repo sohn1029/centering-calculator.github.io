@@ -42,7 +42,7 @@
   .file-label { background:transparent; border:1px dashed var(--line); color:var(--muted);
                  border-radius:8px; padding:9px 14px; cursor:pointer; font-size:13px; }
   .slider { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
-  .slider input[type=range]{ width:130px; accent-color:var(--accent); }
+  .slider input[type=range]{ width:143px; accent-color:var(--accent); }
   .slider span { min-width:26px; text-align:right; color:var(--ink); font-variant-numeric:tabular-nums; }
   /* aspect-ratio selector */
   .aspect-row { display:flex; align-items:center; gap:14px; font-size:12px; color:var(--muted);
@@ -102,7 +102,7 @@
     </div>
     <div class="row" id="barrelRow" style="display:none">
       <label class="slider">Lens curve
-        <input type="range" id="barrel" min="-50" max="100" value="0">
+        <input type="range" id="barrel" min="-30" max="30" step="0.5" value="0">
         <span id="barrelVal">0</span></label>
     </div>
   </section>
