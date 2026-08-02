@@ -189,7 +189,7 @@ const OUTER_COL = "#00e676", INNER_COL = "#e60028";   // bright-green outer, dee
 // dispScale = CSS px per source px on the canvas; MR adapts so the magnifier is
 // always MAG_ZOOM times the canvas zoom (so low-res images still look zoomed in,
 // not smaller than the canvas).
-function showMag(srcImg, sx, sy, clientX, clientY, dispScale, overlay){
+function showMag(srcImg, sx, sy, clientX, clientY, dispScale, overlay, showDot=true){
   const MR = Math.max(10, Math.min(700, MS/(2*MAG_ZOOM*(dispScale||1))));  // source-px radius
   mag.style.display = "block";
   let mx = clientX + 26, my = clientY - MS - 20;
@@ -203,8 +203,10 @@ function showMag(srcImg, sx, sy, clientX, clientY, dispScale, overlay){
   const k = MS/(2*MR);
   const toMag = (x,y) => [ (x-(sx-MR))*k, (y-(sy-MR))*k ];   // source px -> mag px
   if (overlay) overlay(toMag);
-  const c = MS/2;                                            // mark the exact handle point
-  mg.strokeStyle = "#fff"; mg.lineWidth = 1.5; mg.beginPath(); mg.arc(c,c,4,0,7); mg.stroke();
+  if (showDot){                                             // mark the exact handle point
+    const c = MS/2;
+    mg.strokeStyle = "#fff"; mg.lineWidth = 1.5; mg.beginPath(); mg.arc(c,c,4,0,7); mg.stroke();
+  }
 }
 const hideMag = () => mag.style.display = "none";
 
@@ -635,14 +637,18 @@ function moveEdge(p){
   const sx = vert ? R[KEY] : wx;     // edge x for l/r, mouse x for t/b
   const sy = vert ? wy : R[KEY];     // mouse y for l/r, edge y for t/b
   showMag(S.warp, sx, sy, p.cx, p.cy, s2, toMag=>{
-    // thin context rectangles (don't obscure the border)
+    // thin context rectangles (don't obscure the border); split the dragged edge
+    // around the centre so the real border shows through, between the > < arrows.
+    const GAP = 22;
     for(const [name,col] of [["outer",OUTER_COL],["inner",INNER_COL]]){
       const Q = S[name]; const [l,t] = toMag(Q.left,Q.top), [r,b] = toMag(Q.right,Q.bottom);
-      mg.strokeStyle=col; mg.lineWidth=1; mg.setLineDash([]); mg.strokeRect(l,t,r-l,b-t);
+      mg.strokeStyle=col; mg.lineWidth=1; mg.setLineDash([]);
+      if(name===drag2.rect) magGuideGapped(l,t,r,b, drag2.edge, GAP);
+      else                  mg.strokeRect(l,t,r-l,b-t);
     }
-    // >---< markers pointing at the dragged edge so the real border stays visible
+    // > < markers pointing at the dragged edge; the border stays visible between them
     edgeMarker(vert, drag2.rect==='inner'?INNER_COL:OUTER_COL);
-  });
+  }, false);
 }
 // two arrowheads that converge on the edge point, pointing ALONG the edge line
 // (a vertical edge gets up/down arrows; a horizontal edge gets left/right arrows)
@@ -655,6 +661,16 @@ function edgeMarker(vert, col){
   if(vert){ arrow(c,c-gap+len, 0,1); arrow(c,c+gap-len, 0,-1); }   // along vertical edge
   else    { arrow(c-gap+len,c, 1,0); arrow(c+gap-len,c, -1,0); }   // along horizontal edge
 }
+// draw a rectangle guide but break the dragged side around the magnifier centre,
+// leaving a clear gap so the real card border is visible between the > < arrows
+function magGuideGapped(l,t,r,b, edge, gap){
+  const c=MS/2;
+  const seg=(x0,y0,x1,y1)=>{ mg.beginPath(); mg.moveTo(x0,y0); mg.lineTo(x1,y1); mg.stroke(); };
+  if(edge==='t'){ seg(l,t,c-gap,t); seg(c+gap,t,r,t); } else seg(l,t,r,t);
+  if(edge==='b'){ seg(l,b,c-gap,b); seg(c+gap,b,r,b); } else seg(l,b,r,b);
+  if(edge==='l'){ seg(l,t,l,c-gap); seg(l,c+gap,l,b); } else seg(l,t,l,b);
+  if(edge==='r'){ seg(r,t,r,c-gap); seg(r,c+gap,r,b); } else seg(r,t,r,b);
+}
 $("btnReset").addEventListener("click", async ()=>{ $("btnWarp").click(); });
 
 // ============================ STEP 3 =======================================
@@ -666,14 +682,24 @@ function recompute(){
   if(!S.outer||!S.inner) return;
   const L=S.inner.left-S.outer.left, R=S.outer.right-S.inner.right;
   const T=S.inner.top-S.outer.top,  B=S.outer.bottom-S.inner.bottom;
-  if(L<0||R<0||T<0||B<0){ $("gradeLabel").textContent="Inner is larger than outer"; }
-  const lr=pct(L,R), tb=pct(T,B);
-  setGauge("lr",lr,"L","R"); setGauge("tb",tb,"T","B");
   $("lrPx").textContent = `${L.toFixed(0)} / ${R.toFixed(0)}`;
   $("tbPx").textContent = `${T.toFixed(0)} / ${B.toFixed(0)}`;
+  if(L<0||R<0||T<0||B<0){
+    // the red (inner/art) rectangle has crossed the green (outer/card) edge:
+    // the measurement is invalid, so flag an error instead of a bogus grade.
+    setGauge("lr",50,"L","R"); setGauge("tb",50,"T","B");
+    $("worst").textContent = "–";
+    $("grade").textContent = "ERR"; $("grade").style.color = "var(--red)";
+    $("gradeLabel").textContent = "Error card — inner border is outside the card";
+    return;
+  }
+  const lr=pct(L,R), tb=pct(T,B);
+  setGauge("lr",lr,"L","R"); setGauge("tb",tb,"T","B");
   const worst = Math.max(lr,100-lr,tb,100-tb);
   $("worst").textContent = `${worst.toFixed(1)} / ${(100-worst).toFixed(1)}`;
-  const [g,l]=gradeFor(worst); $("grade").textContent=g; $("gradeLabel").textContent=l;
+  const [g,l]=gradeFor(worst);
+  $("grade").textContent=g; $("grade").style.color = "";   // restore normal grade colour
+  $("gradeLabel").textContent=l;
 }
 function setGauge(k, a, la, lb){
   $(k+"A").style.width = a+"%"; $(k+"B").style.width = (100-a)+"%";
