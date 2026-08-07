@@ -46,8 +46,9 @@
   .slider input[type=range]{ width:143px; accent-color:var(--accent); }
   .slider span { min-width:26px; text-align:right; color:var(--ink); font-variant-numeric:tabular-nums; }
   /* aspect-ratio selector */
-  .aspect-row { display:flex; align-items:center; gap:14px; font-size:12px; color:var(--muted);
+  .aspect-row { display:flex; align-items:center; gap:10px 14px; font-size:12px; color:var(--muted);
                 margin:0 0 8px; flex-wrap:wrap; flex:0 0 auto; }
+  .aspect-row .opts { display:flex; align-items:center; gap:12px; flex-wrap:nowrap; white-space:nowrap; }
   .aspect-row label { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
   .aspect-row input[type=radio]{ accent-color:var(--accent); }
   .aspect-row .free { display:inline-flex; align-items:center; gap:5px; }
@@ -72,6 +73,9 @@
   .grade .gl { font-size:12px; color:var(--muted); }
   .legend { font-size:11.5px; color:var(--muted); margin-top:8px; }
   .dot { display:inline-block; width:9px; height:9px; border-radius:2px; margin:0 4px 0 10px; vertical-align:middle; }
+  /* step-2 action buttons: keep on one line */
+  #row2 { flex-wrap:nowrap; }
+  #row2 button { flex:1 1 0; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   /* ---------- mobile: one step at a time (wizard) ---------- */
   .stepnav { display:none; }
   .mini-result { display:none; }
@@ -82,10 +86,17 @@
   body.mobile .grid > .col { display:none; }
   body.mobile .grid > .col.active { display:flex; }
   body.mobile #btnWarp { display:none; }               /* the nav "Rectify" replaces it */
-  body.mobile .aspect-row { gap:10px 12px; }
-  body.mobile .mini-result { display:flex; gap:14px; justify-content:space-between; flex-wrap:wrap;
-        margin-top:8px; padding:8px 10px; background:#11141b; border:1px solid var(--line);
-        border-radius:8px; font-size:12px; color:var(--muted); flex:0 0 auto; }
+  /* compact chrome so the card image gets as much room as possible */
+  body.mobile .grid > .col { padding:10px 12px; }
+  body.mobile .col .sub { min-height:0; margin-bottom:6px; font-size:11.5px; }
+  body.mobile .aspect-row { gap:8px 10px; font-size:11.5px; }
+  body.mobile .aspect-row .opts { gap:10px; }
+  body.mobile .legend { margin-top:6px; }
+  body.mobile .row { margin-top:8px; }
+  body.mobile .mini-result { display:flex; gap:14px; justify-content:space-between; flex-wrap:nowrap;
+        margin-top:8px; padding:7px 12px; background:#11141b; border:1px solid var(--line);
+        border-radius:8px; font-size:12px; color:var(--muted); flex:0 0 auto; min-height:34px;
+        align-items:center; }
   body.mobile .mini-result b { color:var(--ink); font-variant-numeric:tabular-nums; font-size:13px; }
   body.mobile .stepnav { display:flex; align-items:center; justify-content:space-between; gap:10px;
         padding:8px 14px calc(8px + env(safe-area-inset-bottom)); border-top:1px solid var(--line);
@@ -109,11 +120,13 @@
   <!-- STEP 1 -->
   <section class="col active" data-step="1">
     <h2><span class="num">1</span> Outer corners (perspective)</h2>
-    <p class="sub" id="sub1">Upload a photo of a flat (not warped/bent) card that fills at least 50% of the frame. The four corners are auto-detected — drag the handles to fine-tune.</p>
+    <p class="sub" id="sub1">Set the four corners and the lens curve to align the card into an exact rectangle.</p>
     <div class="aspect-row" id="aspectRow">
-      <label><input type="radio" name="aspect" value="pokemon" checked> Pokémon card (63:88)</label>
-      <label><input type="radio" name="aspect" value="a4"> A4 (210:297)</label>
-      <label><input type="radio" name="aspect" value="free"> Free</label>
+      <div class="opts">
+        <label><input type="radio" name="aspect" value="pokemon" checked> Pokémon (63:88)</label>
+        <label><input type="radio" name="aspect" value="a4"> A4 (210:297)</label>
+        <label><input type="radio" name="aspect" value="free"> Free</label>
+      </div>
       <span class="free" id="freeInputs" style="display:none">
         <input type="number" id="arW" value="63" min="1" step="any" aria-label="width ratio"> :
         <input type="number" id="arH" value="88" min="1" step="any" aria-label="height ratio">
@@ -140,11 +153,10 @@
     <div class="mini-result" id="miniResult">
       <span>L / R <b id="mLR">–</b></span>
       <span>T / B <b id="mTB">–</b></span>
-      <span>Grade <b id="mGrade">–</b></span>
     </div>
-    <div class="row">
+    <div class="row" id="row2">
       <button class="ghost" id="btnReset" disabled>Reset to suggested</button>
-      <button id="btnDownload" disabled>⬇ Download straightened card</button>
+      <button id="btnDownload" disabled title="Download the straightened card">⬇ Download card</button>
     </div>
     <p class="legend"><span class="dot" style="background:#00e676"></span>Outer (card edge)
        <span class="dot" style="background:var(--red)"></span>Inner (art edge)</p>
@@ -630,9 +642,9 @@ function setWarp(drawable, w, h, outer, inner){
   S.warp=drawable; S.wcw=w; S.wch=h; S.outer={...outer}; S.inner={...inner};
   $("btnReset").disabled=false; $("btnDownload").disabled=false;
   $("sub2").textContent = "Drag the green (outer) and red (inner) lines to fit. A magnifier appears while dragging.";
-  // on mobile, rectifying from step 1 advances to step 2 (which also fits cv2);
-  // otherwise fit/draw here (desktop shows all steps at once)
-  if(isMobile() && activeStep===1){ showStep(2); }
+  // only the nav "Rectify" action advances to step 2; a re-warp triggered by an
+  // aspect-ratio change must NOT navigate (stay where the user is).
+  if(advanceAfterWarp){ advanceAfterWarp=false; showStep(2); }
   else { s2 = fit(cv2, w, h); draw2(); recompute(); }
 }
 
@@ -749,8 +761,7 @@ function recompute(){
     $("worst").textContent = "–";
     $("grade").textContent = "ERR"; $("grade").style.color = "var(--red)";
     $("gradeLabel").textContent = "Error card — inner border is outside the card";
-    $("mLR").textContent="–"; $("mTB").textContent="–";
-    $("mGrade").textContent="ERR"; $("mGrade").style.color="var(--red)";
+    $("mLR").textContent="ERR"; $("mTB").textContent="ERR";
     return;
   }
   const lr=pct(L,R), tb=pct(T,B);
@@ -760,10 +771,9 @@ function recompute(){
   const [g,l]=gradeFor(worst);
   $("grade").textContent=g; $("grade").style.color = "";   // restore normal grade colour
   $("gradeLabel").textContent=l;
-  // compact live readout shown inside step 2 on mobile
+  // compact live readout shown inside step 2 on mobile (grade lives in step 3)
   $("mLR").textContent=`${lr.toFixed(1)}/${(100-lr).toFixed(1)}`;
   $("mTB").textContent=`${tb.toFixed(1)}/${(100-tb).toFixed(1)}`;
-  $("mGrade").textContent=`${g} ${l}`; $("mGrade").style.color="";
 }
 function setGauge(k, a, la, lb){
   $(k+"A").style.width = a+"%"; $(k+"B").style.width = (100-a)+"%";
@@ -778,6 +788,7 @@ function setGauge(k, a, la, lb){
 // touch screen. Everything else (touch dragging, magnifier) already works via
 // Pointer Events; here we just manage which step is visible and re-fit its canvas.
 let activeStep = 1;
+let advanceAfterWarp = false;   // set by nav "Rectify" so only it advances to step 2
 const mqMobile = matchMedia("(max-width: 900px), (orientation: portrait) and (pointer: coarse)");
 function isMobile(){ return document.body.classList.contains("mobile"); }
 
@@ -802,7 +813,7 @@ function showStep(n){
 }
 $("navBack").addEventListener("click", ()=> showStep(activeStep-1));
 $("navNext").addEventListener("click", ()=>{
-  if(activeStep===1){ if(S.img) $("btnWarp").click(); }   // warp; setWarp advances to step 2
+  if(activeStep===1){ if(S.img){ advanceAfterWarp=true; $("btnWarp").click(); } }
   else if(activeStep===2){ showStep(3); }
 });
 
