@@ -21,6 +21,7 @@
   header .hint { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .grid { flex:1 1 auto; min-height:0; display:grid; grid-template-columns:1fr 1fr 1fr;
           gap:12px; padding:12px; }
+  /* fallback (no JS): stack and scroll on narrow screens */
   @media (max-width:900px){ body{ overflow:auto; } .grid{ grid-template-columns:1fr; } }
   .col { background:var(--panel); border:1px solid var(--line); border-radius:12px;
          padding:12px 14px; display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
@@ -71,6 +72,30 @@
   .grade .gl { font-size:12px; color:var(--muted); }
   .legend { font-size:11.5px; color:var(--muted); margin-top:8px; }
   .dot { display:inline-block; width:9px; height:9px; border-radius:2px; margin:0 4px 0 10px; vertical-align:middle; }
+  /* ---------- mobile: one step at a time (wizard) ---------- */
+  .stepnav { display:none; }
+  .mini-result { display:none; }
+  body.mobile { overflow:hidden; }
+  body.mobile header { padding:8px 12px; gap:10px; }
+  body.mobile header .hint { display:none; }
+  body.mobile .grid { grid-template-columns:1fr; gap:0; padding:8px; }
+  body.mobile .grid > .col { display:none; }
+  body.mobile .grid > .col.active { display:flex; }
+  body.mobile #btnWarp { display:none; }               /* the nav "Rectify" replaces it */
+  body.mobile .aspect-row { gap:10px 12px; }
+  body.mobile .mini-result { display:flex; gap:14px; justify-content:space-between; flex-wrap:wrap;
+        margin-top:8px; padding:8px 10px; background:#11141b; border:1px solid var(--line);
+        border-radius:8px; font-size:12px; color:var(--muted); flex:0 0 auto; }
+  body.mobile .mini-result b { color:var(--ink); font-variant-numeric:tabular-nums; font-size:13px; }
+  body.mobile .stepnav { display:flex; align-items:center; justify-content:space-between; gap:10px;
+        padding:8px 14px calc(8px + env(safe-area-inset-bottom)); border-top:1px solid var(--line);
+        background:var(--panel); flex:0 0 auto; }
+  body.mobile .stepnav button { padding:12px 20px; font-size:15px; }
+  .stepnav .steps { display:flex; gap:8px; }
+  .stepnav .steps span { width:27px; height:27px; border-radius:50%; display:flex; align-items:center;
+        justify-content:center; font-size:12px; font-weight:700; background:#11141b; color:var(--muted);
+        border:1px solid var(--line); }
+  .stepnav .steps span.on { background:var(--accent); color:#0b1020; border-color:var(--accent); }
 </style>
 </head>
 <body>
@@ -82,7 +107,7 @@
 
 <div class="grid">
   <!-- STEP 1 -->
-  <section class="col">
+  <section class="col active" data-step="1">
     <h2><span class="num">1</span> Outer corners (perspective)</h2>
     <p class="sub" id="sub1">Upload a photo of a flat (not warped/bent) card that fills at least 50% of the frame. The four corners are auto-detected — drag the handles to fine-tune.</p>
     <div class="aspect-row" id="aspectRow">
@@ -108,10 +133,15 @@
   </section>
 
   <!-- STEP 2 -->
-  <section class="col">
+  <section class="col" data-step="2">
     <h2><span class="num">2</span> Inner / Outer borders</h2>
     <p class="sub" id="sub2">Drag the green (outer) and red (inner) border lines to fit the rectified card.</p>
     <div class="canvas-wrap"><canvas id="cv2"></canvas></div>
+    <div class="mini-result" id="miniResult">
+      <span>L / R <b id="mLR">–</b></span>
+      <span>T / B <b id="mTB">–</b></span>
+      <span>Grade <b id="mGrade">–</b></span>
+    </div>
     <div class="row">
       <button class="ghost" id="btnReset" disabled>Reset to suggested</button>
       <button id="btnDownload" disabled>⬇ Download straightened card</button>
@@ -121,7 +151,7 @@
   </section>
 
   <!-- STEP 3 -->
-  <section class="col result">
+  <section class="col result" data-step="3">
     <h2><span class="num">3</span> Centering result (live)</h2>
     <p class="sub">Updates instantly as you drag in step ②.</p>
     <div class="gauge">
@@ -141,6 +171,13 @@
     </div>
   </section>
 </div>
+
+<!-- mobile step navigation (one step at a time on tall/portrait screens) -->
+<nav class="stepnav" id="stepnav">
+  <button class="ghost" id="navBack">← Back</button>
+  <div class="steps" id="navSteps"><span data-s="1">1</span><span data-s="2">2</span><span data-s="3">3</span></div>
+  <button id="navNext">Rectify →</button>
+</nav>
 
 <canvas id="mag" width="540" height="540"></canvas>
 
@@ -180,7 +217,12 @@ function fit(canvas, iw, ih){
 
 // ---- magnifier -------------------------------------------------------------
 const mag = $("mag"), mg = mag.getContext("2d");
-const MS = 540;                   // magnifier box size (px)
+let MS = 540;                     // magnifier box size (px); shrinks on phones
+// on a phone the 540px loupe won't fit — size it to the screen
+function magSize(){
+  if(!document.body.classList.contains("mobile")) return 540;
+  return Math.max(220, Math.min(320, Math.round(Math.min(innerWidth, innerHeight) - 24)));
+}
 const MAG_ZOOM = 6;               // magnifier shows ~6x the on-canvas zoom (resolution-independent)
 const SENS = 1/1.5;               // precision drag: handle moves at 1/1.5x the cursor speed
 const OUTER_COL = "#00e676", INNER_COL = "#e60028";   // bright-green outer, deep-red inner
@@ -190,12 +232,22 @@ const OUTER_COL = "#00e676", INNER_COL = "#e60028";   // bright-green outer, dee
 // always MAG_ZOOM times the canvas zoom (so low-res images still look zoomed in,
 // not smaller than the canvas).
 function showMag(srcImg, sx, sy, clientX, clientY, dispScale, overlay, showDot=true){
+  MS = magSize();                                       // adapt loupe size to the screen
+  mag.width = MS; mag.height = MS;                       // (also clears it)
+  mag.style.width = MS+"px"; mag.style.height = MS+"px";
   const MR = Math.max(10, Math.min(700, MS/(2*MAG_ZOOM*(dispScale||1))));  // source-px radius
   mag.style.display = "block";
-  let mx = clientX + 26, my = clientY - MS - 20;
-  if (my < 8) my = clientY + 26;
-  if (mx + MS > innerWidth) mx = clientX - MS - 26;
-  if (mx < 8) mx = 8;
+  let mx, my;
+  if(document.body.classList.contains("mobile")){
+    // keep the loupe on the opposite half from the finger so it isn't covered
+    mx = Math.round((innerWidth - MS)/2);
+    my = (clientY < innerHeight/2) ? innerHeight - MS - 12 : 12;
+  }else{
+    mx = clientX + 26; my = clientY - MS - 20;
+    if (my < 8) my = clientY + 26;
+    if (mx + MS > innerWidth) mx = clientX - MS - 26;
+    if (mx < 8) mx = 8;
+  }
   mag.style.left = mx+"px"; mag.style.top = my+"px";
   mg.clearRect(0,0,MS,MS);
   mg.imageSmoothingEnabled = false;
@@ -547,6 +599,7 @@ async function loadFile(f){
     }
     s1 = fit(cv1, S.ow, S.oh);   // re-fit after final layout (sub text settled)
     draw1(); $("btnWarp").disabled = false;
+    if(isMobile()) showStep(1);  // refresh nav (enable Next now that an image is loaded)
   };
   img.src = URL.createObjectURL(f);
 }
@@ -575,9 +628,12 @@ $("btnWarp").addEventListener("click", async ()=>{
 });
 function setWarp(drawable, w, h, outer, inner){
   S.warp=drawable; S.wcw=w; S.wch=h; S.outer={...outer}; S.inner={...inner};
-  s2 = fit(cv2, w, h); draw2(); recompute();
   $("btnReset").disabled=false; $("btnDownload").disabled=false;
   $("sub2").textContent = "Drag the green (outer) and red (inner) lines to fit. A magnifier appears while dragging.";
+  // on mobile, rectifying from step 1 advances to step 2 (which also fits cv2);
+  // otherwise fit/draw here (desktop shows all steps at once)
+  if(isMobile() && activeStep===1){ showStep(2); }
+  else { s2 = fit(cv2, w, h); draw2(); recompute(); }
 }
 
 // ============================ STEP 2 =======================================
@@ -602,10 +658,12 @@ function drawRect(R, col){
   H.forEach(([x,y])=>{ c2.beginPath(); c2.rect(x-4,y-4,8,8); c2.fill(); });
 }
 function pickEdge(p){
-  const near=(v,w)=>Math.abs(v-w)<12;
+  const TOL = isMobile() ? 20 : 12;            // fatter target for finger-touch
+  const near=(v,w)=>Math.abs(v-w)<TOL;
+  const pad = TOL+2;
   for(const rect of ["inner","outer"]){        // inner first (drawn on top / priority)
     const R=S[rect], l=R.left*s2,t=R.top*s2,r=R.right*s2,b=R.bottom*s2;
-    const inY = p.y>t-14 && p.y<b+14, inX = p.x>l-14 && p.x<r+14;
+    const inY = p.y>t-pad && p.y<b+pad, inX = p.x>l-pad && p.x<r+pad;
     if(near(p.x,l)&&inY) return {rect,edge:'l'};
     if(near(p.x,r)&&inY) return {rect,edge:'r'};
     if(near(p.y,t)&&inX) return {rect,edge:'t'};
@@ -691,6 +749,8 @@ function recompute(){
     $("worst").textContent = "–";
     $("grade").textContent = "ERR"; $("grade").style.color = "var(--red)";
     $("gradeLabel").textContent = "Error card — inner border is outside the card";
+    $("mLR").textContent="–"; $("mTB").textContent="–";
+    $("mGrade").textContent="ERR"; $("mGrade").style.color="var(--red)";
     return;
   }
   const lr=pct(L,R), tb=pct(T,B);
@@ -700,6 +760,10 @@ function recompute(){
   const [g,l]=gradeFor(worst);
   $("grade").textContent=g; $("grade").style.color = "";   // restore normal grade colour
   $("gradeLabel").textContent=l;
+  // compact live readout shown inside step 2 on mobile
+  $("mLR").textContent=`${lr.toFixed(1)}/${(100-lr).toFixed(1)}`;
+  $("mTB").textContent=`${tb.toFixed(1)}/${(100-tb).toFixed(1)}`;
+  $("mGrade").textContent=`${g} ${l}`; $("mGrade").style.color="";
 }
 function setGauge(k, a, la, lb){
   $(k+"A").style.width = a+"%"; $(k+"B").style.width = (100-a)+"%";
@@ -708,8 +772,59 @@ function setGauge(k, a, la, lb){
   $((k==="lr"?"r":"b")+"Lab").textContent = (100-a).toFixed(1)+"%";
 }
 
-addEventListener("resize", ()=>{ if(S.img){ s1=fit(cv1,S.ow,S.oh); draw1(); }
-                                  if(S.warp){ s2=fit(cv2,S.wcw,S.wch); draw2(); } });
+// ==================== MOBILE STEPPER (one step at a time) ==================
+// Phones are tall/portrait, so instead of the 3-up desktop grid we show a single
+// step and navigate with the bottom bar. Detection: narrow width, or a portrait
+// touch screen. Everything else (touch dragging, magnifier) already works via
+// Pointer Events; here we just manage which step is visible and re-fit its canvas.
+let activeStep = 1;
+const mqMobile = matchMedia("(max-width: 900px), (orientation: portrait) and (pointer: coarse)");
+function isMobile(){ return document.body.classList.contains("mobile"); }
+
+function refitActive(){
+  // a canvas that was display:none has no size; re-fit once its step is visible
+  requestAnimationFrame(()=>{
+    if(activeStep===1 && S.img){ s1=fit(cv1,S.ow,S.oh); draw1(); }
+    if(activeStep===2 && S.warp){ s2=fit(cv2,S.wcw,S.wch); draw2(); recompute(); }
+  });
+}
+function showStep(n){
+  activeStep = clamp(n, 1, 3);
+  document.querySelectorAll(".grid > .col").forEach(c=>
+    c.classList.toggle("active", +c.dataset.step===activeStep));
+  document.querySelectorAll("#navSteps span").forEach(s=>
+    s.classList.toggle("on", +s.dataset.s===activeStep));
+  $("navBack").style.visibility = activeStep===1 ? "hidden" : "visible";
+  const next=$("navNext");
+  next.textContent = activeStep===1 ? "Rectify →" : activeStep===2 ? "Result →" : "Done";
+  next.disabled = (activeStep===1 && !S.img) || activeStep===3;
+  refitActive();
+}
+$("navBack").addEventListener("click", ()=> showStep(activeStep-1));
+$("navNext").addEventListener("click", ()=>{
+  if(activeStep===1){ if(S.img) $("btnWarp").click(); }   // warp; setWarp advances to step 2
+  else if(activeStep===2){ showStep(3); }
+});
+
+function applyMode(){
+  const m = mqMobile.matches;
+  document.body.classList.toggle("mobile", m);
+  if(m){ showStep(activeStep); }
+  else {
+    document.querySelectorAll(".grid > .col").forEach(c=>c.classList.remove("active"));
+    requestAnimationFrame(()=>{ if(S.img){s1=fit(cv1,S.ow,S.oh);draw1();}
+                                if(S.warp){s2=fit(cv2,S.wcw,S.wch);draw2();} });
+  }
+}
+mqMobile.addEventListener("change", applyMode);
+
+addEventListener("resize", ()=>{
+  if(isMobile()) refitActive();
+  else { if(S.img){ s1=fit(cv1,S.ow,S.oh); draw1(); }
+         if(S.warp){ s2=fit(cv2,S.wcw,S.wch); draw2(); } }
+});
+
+applyMode();   // set initial layout
 </script>
 </body>
 </html>
