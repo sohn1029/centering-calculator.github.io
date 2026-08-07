@@ -11,7 +11,8 @@
           --blue:#0047d6; --red:#e60028; --green:#22c55e; --accent:#7c9cff; }
   * { box-sizing:border-box; }
   html, body { height:100%; }
-  body { margin:0; background:var(--bg); color:var(--ink); height:100vh; overflow:hidden;
+  body { margin:0; background:var(--bg); color:var(--ink); overflow:hidden;
+         height:100vh; height:100dvh;   /* dvh: keep the bottom nav on-screen on phones */
          display:flex; flex-direction:column;
          font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
   header { padding:10px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center;
@@ -86,6 +87,7 @@
   body.mobile .grid > .col { display:none; }
   body.mobile .grid > .col.active { display:flex; }
   body.mobile #btnWarp { display:none; }               /* the nav "Rectify" replaces it */
+  body.mobile .free-opt, body.mobile .aspect-row .free { display:none; }   /* no Free on phones */
   /* compact chrome so the card image gets as much room as possible */
   body.mobile .grid > .col { padding:10px 12px; }
   body.mobile .col .sub { min-height:0; margin-bottom:6px; font-size:11.5px; }
@@ -125,7 +127,7 @@
       <div class="opts">
         <label><input type="radio" name="aspect" value="pokemon" checked> Pokémon (63:88)</label>
         <label><input type="radio" name="aspect" value="a4"> A4 (210:297)</label>
-        <label><input type="radio" name="aspect" value="free"> Free</label>
+        <label class="free-opt"><input type="radio" name="aspect" value="free"> Free</label>
       </div>
       <span class="free" id="freeInputs" style="display:none">
         <input type="number" id="arW" value="63" min="1" step="any" aria-label="width ratio"> :
@@ -820,7 +822,16 @@ $("navNext").addEventListener("click", ()=>{
 function applyMode(){
   const m = mqMobile.matches;
   document.body.classList.toggle("mobile", m);
-  if(m){ showStep(activeStep); }
+  if(m){
+    // Free mode is hidden on phones — if it was selected, fall back to Pokémon
+    const sel = document.querySelector('input[name="aspect"]:checked');
+    if(sel && sel.value==="free"){
+      document.querySelector('input[name="aspect"][value="pokemon"]').checked = true;
+      $("freeInputs").style.display = "none";
+      if(S.warp) $("btnWarp").click();     // re-rectify at the Pokémon ratio (stays on step)
+    }
+    showStep(activeStep);
+  }
   else {
     document.querySelectorAll(".grid > .col").forEach(c=>c.classList.remove("active"));
     requestAnimationFrame(()=>{ if(S.img){s1=fit(cv1,S.ow,S.oh);draw1();}
